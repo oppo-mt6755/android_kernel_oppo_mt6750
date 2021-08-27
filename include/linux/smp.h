@@ -20,7 +20,9 @@ struct call_single_data {
 	struct list_head list;
 	smp_call_func_t func;
 	void *info;
+	cpumask_var_t cpumask;
 	u16 flags;
+	u16 priv;
 };
 
 /* total number of cpus in this system (may exceed NR_CPUS) */
@@ -29,6 +31,8 @@ extern unsigned int total_cpus;
 int smp_call_function_single(int cpuid, smp_call_func_t func, void *info,
 			     int wait);
 
+int mtk_smp_call_function_single(int cpuid, smp_call_func_t func, void *info, int wait);
+
 #ifdef CONFIG_SMP
 
 #include <linux/preempt.h>
@@ -36,6 +40,24 @@ int smp_call_function_single(int cpuid, smp_call_func_t func, void *info,
 #include <linux/compiler.h>
 #include <linux/thread_info.h>
 #include <asm/smp.h>
+
+#define CONFIG_PROFILE_CPU
+
+#ifdef CONFIG_PROFILE_CPU
+struct profile_cpu_stats {
+	u64 hotplug_up_time;
+	u64 hotplug_down_time;
+	u64 hotplug_up_lat_us;
+	u64 hotplug_down_lat_us;
+	u64 hotplug_up_lat_max;
+	u64 hotplug_down_lat_max;
+	u64 hotplug_up_lat_min;
+	u64 hotplug_down_lat_min;
+};
+
+extern struct profile_cpu_stats *cpu_stats;
+#endif
+
 
 /*
  * main cross-CPU interfaces, handles INIT, TLB flush, STOP, etc.
@@ -214,7 +236,7 @@ static inline void kick_all_cpus_sync(void) {  }
  * the warning message, as your code might not work under PREEMPT.
  */
 #ifdef CONFIG_DEBUG_PREEMPT
-  extern unsigned int debug_smp_processor_id(void);
+extern unsigned int debug_smp_processor_id(void);
 # define smp_processor_id() debug_smp_processor_id()
 #else
 # define smp_processor_id() raw_smp_processor_id()

@@ -771,7 +771,13 @@ static int kill_ok_by_cred(struct task_struct *t)
 	if (uid_eq(cred->euid, tcred->suid) ||
 	    uid_eq(cred->euid, tcred->uid)  ||
 	    uid_eq(cred->uid,  tcred->suid) ||
+	    #ifdef VENDOR_EDIT
+	    // liangkun@Swdp.shanghai 2015/11/18, give permission to system to send specific signal
+	    uid_eq(cred->uid,  tcred->uid)  ||
+	    cred->uid == 1000)
+	    #else
 	    uid_eq(cred->uid,  tcred->uid))
+	    #endif
 		return 1;
 
 	if (ns_capable(tcred->user_ns, CAP_KILL))
@@ -861,8 +867,10 @@ static bool prepare_signal(int sig, struct task_struct *p, bool force)
 	struct task_struct *t;
 
 	if (signal->flags & (SIGNAL_GROUP_EXIT | SIGNAL_GROUP_COREDUMP)) {
-		if (signal->flags & SIGNAL_GROUP_COREDUMP)
-			return sig == SIGKILL;
+		if (signal->flags & SIGNAL_GROUP_COREDUMP) {
+			printk(KERN_DEBUG "[%d:%s] is in the middle of dying so skip sig %d\n",p->pid, p->comm, sig);
+		}
+		return 0;
 		/*
 		 * The process is in the middle of dying, nothing to do.
 		 */
@@ -1043,6 +1051,9 @@ static inline void userns_fixup_signal_uid(struct siginfo *info, struct task_str
 }
 #endif
 
+#ifdef VENDOR_EDIT//Fanhong.Kong@ProDrv.CHG,add 2015/12/15 for yanghui debug
+static const char stat_nam[] = TASK_STATE_TO_CHAR_STR;
+#endif/*VENDOR_EDIT*/
 static int __send_signal(int sig, struct siginfo *info, struct task_struct *t,
 			int group, int from_ancestor_ns)
 {
@@ -1050,6 +1061,27 @@ static int __send_signal(int sig, struct siginfo *info, struct task_struct *t,
 	struct sigqueue *q;
 	int override_rlimit;
 	int ret = 0, result;
+#ifdef VENDOR_EDIT//Fanhong.Kong@ProDrv.CHG,add 2015/12/15 for yanghui debug
+	unsigned state;
+
+	state = t->state ? __ffs(t->state) + 1 : 0;
+	printk(KERN_DEBUG "[%d:%s] sig %d to [%d:%s] stat=%c\n",
+	current->pid, current->comm, sig, t->pid, t->comm,state < sizeof(stat_nam) - 1 ? stat_nam[state] : '?');
+#endif/*VENDOR_EDIT*/
+
+#ifdef VENDOR_EDIT
+//fangpan@Swdp.shanghai, 2016/03/31 add the vm suspend state
+#ifdef CONFIG_VM_STATE
+	/*change the vmstate only for the group_leader*/
+	if(t && t->group_leader) {
+		if (sig == SIGVMSUSPEND) {
+			atomic_set(&t->group_leader->vmstate, 1);
+		} else if (sig == SIGPROCSUSPEND) {
+			atomic_set(&t->group_leader->vmstate, 2);
+		}
+	}
+#endif
+#endif
 
 	assert_spin_locked(&t->sighand->siglock);
 
@@ -1307,7 +1339,10 @@ struct sighand_struct *__lock_task_sighand(struct task_struct *tsk,
 
 	return sighand;
 }
-
+#ifdef VENDOR_EDIT
+//fangpan@Swdp.shanghai, 2015/11/26, add interface for resmon module
+EXPORT_SYMBOL(__lock_task_sighand);
+#endif
 /*
  * send signal info to all the members of a group
  */
@@ -2590,6 +2625,28 @@ int sigprocmask(int how, sigset_t *set, sigset_t *oldset)
 		return -EINVAL;
 	}
 
+#ifdef VENDOR_EDIT
+	//fangpan@Swdp.shanghai, 2017/05/05 reserve the ART suspend signal block
+#ifdef CONFIG_VM_STATE
+	/*As in the ART, it add the SIGVMSUSPEND,SIGVMRESUME,SIGPROCSUSPEND,
+	 * SIGPROCRESUME. need consider this for some 32bits compatible app*/
+	switch (_NSIG_WORDS) {
+		case 2:
+			if (tsk->blocked.sig[1] & SIGVM_LOW_MASK) {
+				newset.sig[1] |= (unsigned long)SIGVM_LOW_MASK;
+			}
+			break;
+		case 1:
+			if (tsk->blocked.sig[0] & SIGVM_MASK) {
+				newset.sig[0] |= (unsigned long long)SIGVM_MASK;
+			}
+			break;
+		default:
+			break;
+	}
+#endif
+#endif
+
 	__set_current_blocked(&newset);
 	return 0;
 }
@@ -2664,8 +2721,43 @@ COMPAT_SYSCALL_DEFINE4(rt_sigprocmask, int, how, compat_sigset_t __user *, nset,
 	}
 	return 0;
 #else
+#ifdef VENDOR_EDIT
+	//fangpan@Swdp.shanghai, 2016/03/31 add the vm suspend state
+#ifdef CONFIG_VM_STATE
+	sigset_t old_set, new_set;
+	int error;
+
+	/* XXX: Don't preclude handling different sized sigset_t's.  */
+	if (sigsetsize != sizeof(sigset_t))
+		return -EINVAL;
+
+	old_set = current->blocked;
+
+	if (nset) {
+		if (copy_from_user(&new_set, nset, sizeof(sigset_t)))
+			return -EFAULT;
+
+		sigdelsetmask(&new_set, sigmask(SIGKILL)|sigmask(SIGSTOP));
+
+		error = sigprocmask(how, &new_set, NULL);
+		if (error)
+			return error;
+	}
+
+	if (oset) {
+		if (copy_to_user(oset, &old_set, sizeof(sigset_t)))
+			return -EFAULT;
+	}
+
+	return 0;
+#else
 	return sys_rt_sigprocmask(how, (sigset_t __user *)nset,
-				  (sigset_t __user *)oset, sigsetsize);
+				(sigset_t __user *)oset, sigsetsize);
+#endif
+#else
+	return sys_rt_sigprocmask(how, (sigset_t __user *)nset,
+				(sigset_t __user *)oset, sigsetsize);
+#endif
 #endif
 }
 #endif
@@ -2815,6 +2907,12 @@ int do_sigtimedwait(const sigset_t *which, siginfo_t *info,
 	long timeout = MAX_SCHEDULE_TIMEOUT;
 	sigset_t mask = *which;
 	int sig;
+#ifdef VENDOR_EDIT
+//fangpan@Swdp.shanghai, 2016/03/31 add the vm suspend state
+#ifdef CONFIG_VM_STATE
+	struct task_struct *t = tsk;
+#endif
+#endif
 
 	if (ts) {
 		if (!timespec_valid(ts))
@@ -2848,7 +2946,7 @@ int do_sigtimedwait(const sigset_t *which, siginfo_t *info,
 		recalc_sigpending();
 		spin_unlock_irq(&tsk->sighand->siglock);
 
-		timeout = schedule_timeout_interruptible(timeout);
+		timeout = freezable_schedule_timeout_interruptible(timeout);
 
 		spin_lock_irq(&tsk->sighand->siglock);
 		__set_task_blocked(tsk, &tsk->real_blocked);
@@ -2857,6 +2955,31 @@ int do_sigtimedwait(const sigset_t *which, siginfo_t *info,
 	}
 	spin_unlock_irq(&tsk->sighand->siglock);
 
+#ifdef VENDOR_EDIT
+//fangpan@Swdp.shanghai, 2016/03/31 add the vm suspend state
+#ifdef CONFIG_VM_STATE
+	/*add the tasklist_lock to protect the vmstat change*/
+	write_lock_irq(&tasklist_lock);
+	if (sig == SIGVMSUSPEND) {
+		atomic_set(&tsk->group_leader->vmstate, 1);
+		while_each_thread(tsk->group_leader, t)
+			atomic_set(&t->vmstate, 1);
+	} else if  (sig == SIGVMRESUME) {
+		atomic_set(&tsk->group_leader->vmstate, 0);
+		while_each_thread(tsk->group_leader, t)
+			atomic_set(&t->vmstate, 0);
+	} else if (sig == SIGPROCSUSPEND) {
+		atomic_set(&tsk->group_leader->vmstate, 2);
+		while_each_thread(tsk->group_leader, t)
+			atomic_set(&t->vmstate, 2);
+	} else if  (sig == SIGPROCRESUME) {
+		atomic_set(&tsk->group_leader->vmstate, 0);
+		while_each_thread(tsk->group_leader, t)
+			atomic_set(&t->vmstate, 0);
+	}
+	write_unlock_irq(&tasklist_lock);
+#endif
+#endif
 	if (sig)
 		return sig;
 	return timeout ? -EINTR : -EAGAIN;

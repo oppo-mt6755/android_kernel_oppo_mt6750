@@ -15,6 +15,10 @@
 #include <asm/page.h>
 #include <asm/pgtable.h>
 #include "internal.h"
+#ifdef VENDOR_EDIT
+/* Huacai.Zhou@PSW.BSP.Kernel.MM, 2018-06-26, add ion total used account*/
+#include <linux/ion.h>
+#endif /*VENDOR_EDIT*/
 
 void __attribute__((weak)) arch_report_meminfo(struct seq_file *m)
 {
@@ -105,6 +109,16 @@ static int meminfo_proc_show(struct seq_file *m, void *v)
 #ifdef CONFIG_TRANSPARENT_HUGEPAGE
 		"AnonHugePages:  %8lu kB\n"
 #endif
+#ifdef VENDOR_EDIT
+/* Huacai.Zhou@PSW.BSP.Kernel.MM, 2018-3-15,add oppox account */
+		"Oppo0Free:  %8lu kB\n"
+		"Oppo2Free:  %8lu kB\n"
+#endif /* VENDOR_EDIT */
+
+#ifdef VENDOR_EDIT
+/*Huacai.Zhou@PSW.BSP.Kernel.MM, 2018-06-26, add ion total used account*/
+		"IonTotalUsed:   %8lu Kb\n"
+#endif /*VENDOR_EDIT*/
 		,
 		K(i.totalram),
 		K(i.freeram),
@@ -165,7 +179,16 @@ static int meminfo_proc_show(struct seq_file *m, void *v)
 		,K(global_page_state(NR_ANON_TRANSPARENT_HUGEPAGES) *
 		   HPAGE_PMD_NR)
 #endif
-		);
+#ifdef VENDOR_EDIT
+/* Huacai.Zhou@PSW.BSP.Kernel.MM, 2018-3-15,add oppox account */
+		,K(global_page_state(NR_FREE_OPPO0_PAGES))
+		,K(global_page_state(NR_FREE_OPPO2_PAGES))
+#endif /*VENDOR_EDIT*/
+#ifdef VENDOR_EDIT
+/*Huacai.Zhou@PSW.BSP.Kernel.MM, 2018-06-26, add ion total used account*/
+		,K(ion_total() >> PAGE_SHIFT)
+#endif /*VENDOR_EDIT*/
+);
 
 	hugetlb_report_meminfo(m);
 

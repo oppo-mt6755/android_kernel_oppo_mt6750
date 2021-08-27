@@ -105,6 +105,7 @@ obj-$(CONFIG_QNX6FS_FS)		+= qnx6/
 obj-$(CONFIG_AUTOFS4_FS)	+= autofs4/
 obj-$(CONFIG_ADFS_FS)		+= adfs/
 obj-$(CONFIG_FUSE_FS)		+= fuse/
+obj-$(CONFIG_SDCARD_FS)         += sdcardfs/
 obj-$(CONFIG_UDF_FS)		+= udf/
 obj-$(CONFIG_SUN_OPENPROMFS)	+= openpromfs/
 obj-$(CONFIG_OMFS_FS)		+= omfs/
@@ -126,3 +127,11 @@ obj-y				+= exofs/ # Multiple modules
 obj-$(CONFIG_CEPH_FS)		+= ceph/
 obj-$(CONFIG_PSTORE)		+= pstore/
 obj-$(CONFIG_EFIVAR_FS)		+= efivarfs/
+obj-$(CONFIG_RAWFS_FS)		+= rawfs/
+# Patched by YAFFS
+obj-$(CONFIG_YAFFS_FS)          += yaffs2/
+
+#ifdef VENDOR_EDIT
+#Fangfang.Hui@Swdp.Android.Usb.Vold, 2014/06/13, Add for support exfat and ntfs
+obj-$(CONFIG_EXFAT_FS)		+= exfat/
+#endif /*VENDOR_EDIT*/

@@ -8,6 +8,10 @@
 #include <linux/mm.h>
 #include <linux/nmi.h>
 #include <linux/quicklist.h>
+#ifdef VENDOR_EDIT
+/* Huacai.Zhou@PSW.BSP.Kernel.MM, 2018-06-26, add ion total used account*/
+#include <linux/ion.h>
+#endif /*VENDOR_EDIT*/
 
 void show_mem(unsigned int filter)
 {
@@ -22,6 +26,7 @@ void show_mem(unsigned int filter)
 		return;
 
 	for_each_online_pgdat(pgdat) {
+#if !defined(CONFIG_CMA) || !defined(CONFIG_MTK_SVP) /* SVP 10 */
 		unsigned long i, flags;
 
 		pgdat_resize_lock(pgdat, &flags);
@@ -50,6 +55,25 @@ void show_mem(unsigned int filter)
 			total++;
 		}
 		pgdat_resize_unlock(pgdat, &flags);
+#else
+		unsigned long flags;
+		int zoneid;
+
+		pgdat_resize_lock(pgdat, &flags);
+		for (zoneid = 0; zoneid < MAX_NR_ZONES; zoneid++) {
+			struct zone *zone = &pgdat->node_zones[zoneid];
+			if (!populated_zone(zone))
+				continue;
+
+			total += zone->present_pages;
+			reserved += zone->present_pages - zone->managed_pages;
+
+			/* if (is_highmem_idx(zoneid)) */
+			if (is_highmem(zone))
+				highmem += zone->present_pages;
+		}
+		pgdat_resize_unlock(pgdat, &flags);
+#endif
 	}
 
 	printk("%lu pages RAM\n", total);
@@ -63,4 +87,8 @@ void show_mem(unsigned int filter)
 	printk("%lu pages in pagetable cache\n",
 		quicklist_total_size());
 #endif
+#ifdef VENDOR_EDIT
+/* Huacai.Zhou@PSW.BSP.Kernel.MM, 2018-06-26, add ion total used account*/
+	printk("%lu pages ion total used\n", ion_total()>> PAGE_SHIFT);
+#endif /*VENDOR_EDIT*/
 }

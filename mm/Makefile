@@ -58,3 +58,8 @@ obj-$(CONFIG_DEBUG_KMEMLEAK) += kmemleak.o
 obj-$(CONFIG_DEBUG_KMEMLEAK_TEST) += kmemleak-test.o
 obj-$(CONFIG_CLEANCACHE) += cleancache.o
 obj-$(CONFIG_MEMORY_ISOLATION) += page_isolation.o
+#ifdef VENDOR_EDIT
+#/* Huacai.Zhou@PSW.BSP.Kernel.MM, 2018-07-07, add alloc wait monitor support*/
+obj-$(CONFIG_OPPO_MEM_MONITOR) += memory_monitor.o
+#endif /*VENDOR_EDIT*/
+obj-$(CONFIG_ZSMALLOC) += zsmalloc.o

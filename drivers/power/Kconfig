@@ -362,8 +362,28 @@ config BATTERY_GOLDFISH
 	  Say Y to enable support for the battery and AC power in the
 	  Goldfish emulator.
 
+#ifdef VENDOR_EDIT //OPPO 2016-04-21 sjc Add for charging
+config OPPO_4400MV_BATTERY_SUPPORT
+	bool "OPPO 4.4V battery support"
+	help
+	  Say Y here to support 4.4V battery
+#endif //VENDOR_EDIT
+
+#ifdef VENDOR_EDIT //OPPO 2016-04-21 wenbin.liu Add for RTC check
+config OPPO_RTC_DET_SUPPORT
+	bool "OPPO RTC DET SUPPORT"
+	help
+	  Say Y here to support rtc_det_support
+#endif //VENDOR_EDIT
+
+config OPPO_SHORT_C_BATT_CHECK
+	bool "OPPO batt short "
+	help
+	  Say Y here to declare charging system is on MTK	  
+
 source "drivers/power/reset/Kconfig"
 
 endif # POWER_SUPPLY
 
 source "drivers/power/avs/Kconfig"
+source "drivers/power/mediatek/oppo/Kconfig"

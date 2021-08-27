@@ -525,3 +525,15 @@ config SND_SOC_ML26124
 
 config SND_SOC_TPA6130A2
 	tristate
+
+# yongzhi.zhang@Multimedia, 2016/01/05, add AK4375 for MT6755
+config SND_SOC_EXTCODEC_AK4375
+	bool "Use AK4375 As Extra CODEC"
+	default n
+
+#ifdef VENDOR_EDIT
+#Jianfeng.Qiu@Swdp.Multimedia, 2016/04/18, Add for ts4621
+config SND_SOC_EXTCODEC_TS4621
+	bool "Use TS4621 CODEC"
+	default n
+#endif /* VENDOR_EDIT */

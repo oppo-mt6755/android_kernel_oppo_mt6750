@@ -601,6 +601,12 @@ asmlinkage long compat_sys_sched_setaffinity(compat_pid_t pid,
 					     compat_ulong_t __user *user_mask_ptr)
 {
 	cpumask_var_t new_mask;
+	//#ifdef VENDOR_EDIT
+	//Zongjun.Li@Swdp.Android.Patch.MTK, 2016/01/22, Add for some app setaffinity for cpu0 only
+	/* BEGIN MTK-changed: OR CPU4 if affinity is set CPU0 only */
+	cpumask_var_t cpu0_mask;
+	/* END MTK-change */
+	//#endif /* VENDOR_EDIT */
 	int retval;
 
 	if (!alloc_cpumask_var(&new_mask, GFP_KERNEL))
@@ -609,6 +615,23 @@ asmlinkage long compat_sys_sched_setaffinity(compat_pid_t pid,
 	retval = compat_get_user_cpu_mask(user_mask_ptr, len, new_mask);
 	if (retval)
 		goto out;
+
+	//#ifdef VENDOR_EDIT
+	//Zongjun.Li@Swdp.Android.Patch.MTK, 2016/01/22, Add for some app setaffinity for cpu0 only
+	/* BEGIN MTK-changed: OR CPU4 if affinity is set CPU0 only */
+	if (!alloc_cpumask_var(&cpu0_mask, GFP_KERNEL)) {
+		// If allocation is failed, go with original flow, and won't return
+		pr_debug("SCHED: setaffinity alloc_cpumask_var for cpu0_mask fail\n");
+	} else {
+		cpumask_clear(cpu0_mask);
+		cpumask_set_cpu(0, cpu0_mask);
+		if (cpumask_equal(new_mask, cpu0_mask)) {
+			cpumask_set_cpu(4, new_mask);
+		}
+		free_cpumask_var(cpu0_mask);
+	}
+	/* END MTK-change */
+	//#endif /* VENDOR_EDIT */
 
 	retval = sched_setaffinity(pid, new_mask);
 out:

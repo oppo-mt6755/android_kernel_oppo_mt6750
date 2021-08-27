@@ -76,11 +76,21 @@ static void devm_usb_phy_release(struct device *dev, void *res)
 	usb_put_phy(phy);
 }
 
+
+#ifndef VENDOR_EDIT 
+// wenxian.zhen@Phone.Bsp.Driver, 2016/02/29  modified  usb: phy: Find the right match in devm_usb_phy_match
 static int devm_usb_phy_match(struct device *dev, void *res, void *match_data)
 {
 	return res == match_data;
 }
-
+#else
+static int devm_usb_phy_match(struct device *dev, void *res, void *match_data)
+{
+ 	struct usb_phy **phy = res; 
+ 	
+ 		return *phy == match_data;
+}
+#endif /*CONFIG_VENDOR_EDIT*/
 /**
  * devm_usb_get_phy - find the USB PHY
  * @dev - device that requests this phy

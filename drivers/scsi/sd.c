@@ -1414,6 +1414,16 @@ out:
 	 */
 	kfree(sshdr);
 	retval = sdp->changed ? DISK_EVENT_MEDIA_CHANGE : 0;
+#ifdef CONFIG_MTK_MULTI_PARTITION_MOUNT_ONLY_SUPPORT
+ 	//add for sdcard hotplug start
+	if(1 == retval){
+		if(sdkp->old_media_present != sdkp->media_present){
+			retval  |=  sdkp->media_present ? 0 : DISK_EVENT_MEDIA_DISAPPEAR;
+			sdkp->old_media_present = sdkp->media_present;
+		}
+	}
+	//add for sdcard hotplug end	
+#endif
 	sdp->changed = 0;
 	return retval;
 }
@@ -1748,7 +1758,6 @@ sd_spinup_disk(struct scsi_disk *sdkp)
 						      DMA_NONE, NULL, 0,
 						      &sshdr, SD_TIMEOUT,
 						      SD_MAX_RETRIES, NULL);
-
 			/*
 			 * If the drive has indicated to us that it
 			 * doesn't have any media in it, don't bother
@@ -1761,9 +1770,10 @@ sd_spinup_disk(struct scsi_disk *sdkp)
 				sense_valid = scsi_sense_valid(&sshdr);
 			retries++;
 		} while (retries < 3 && 
-			 (!scsi_status_is_good(the_result) ||
+				(!scsi_status_is_good(the_result) ||
 			  ((driver_byte(the_result) & DRIVER_SENSE) &&
-			  sense_valid && sshdr.sense_key == UNIT_ATTENTION)));
+				sense_valid && sshdr.sense_key == UNIT_ATTENTION)));
+
 
 		if ((driver_byte(the_result) & DRIVER_SENSE) == 0) {
 			/* no sense, TUR either succeeded or failed
@@ -2841,6 +2851,9 @@ static void sd_probe_async(void *data, async_cookie_t cookie)
 	sdkp->max_medium_access_timeouts = SD_MAX_MEDIUM_TIMEOUTS;
 
 	sd_revalidate_disk(gd);
+#ifdef CONFIG_MTK_MULTI_PARTITION_MOUNT_ONLY_SUPPORT	
+	sdkp->old_media_present = sdkp->media_present; //add for sdcard hotplug
+#endif
 
 	blk_queue_prep_rq(sdp->request_queue, sd_prep_fn);
 	blk_queue_unprep_rq(sdp->request_queue, sd_unprep_fn);
@@ -2849,7 +2862,11 @@ static void sd_probe_async(void *data, async_cookie_t cookie)
 	gd->flags = GENHD_FL_EXT_DEVT;
 	if (sdp->removable) {
 		gd->flags |= GENHD_FL_REMOVABLE;
+#ifdef CONFIG_MTK_MULTI_PARTITION_MOUNT_ONLY_SUPPORT		
+		gd->events |= DISK_EVENT_MEDIA_CHANGE|DISK_EVENT_MEDIA_DISAPPEAR; //add for sdcard hotplug
+#else
 		gd->events |= DISK_EVENT_MEDIA_CHANGE;
+#endif		
 	}
 
 	blk_pm_runtime_init(sdp->request_queue, dev);

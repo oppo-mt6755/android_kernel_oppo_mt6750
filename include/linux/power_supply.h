@@ -15,6 +15,7 @@
 
 #include <linux/workqueue.h>
 #include <linux/leds.h>
+#include <linux/types.h>
 
 struct device;
 
@@ -37,6 +38,7 @@ enum {
 	POWER_SUPPLY_STATUS_DISCHARGING,
 	POWER_SUPPLY_STATUS_NOT_CHARGING,
 	POWER_SUPPLY_STATUS_FULL,
+	POWER_SUPPLY_STATUS_CMD_DISCHARGING,
 };
 
 enum {
@@ -85,7 +87,28 @@ enum {
 
 enum power_supply_property {
 	/* Properties of type `int' */
-	POWER_SUPPLY_PROP_STATUS = 0,
+#ifdef VENDOR_EDIT//Fanhong.Kong@ProDrv.CHG, 2012/03/08, Add for low battery in sleep
+//	POWER_SUPPLY_PROP_BATTERY_VOL = 0,
+//	POWER_SUPPLY_PROP_BATTERY_CURRENT,
+//	POWER_SUPPLY_PROP_BATTERY_TEMP,
+//	POWER_SUPPLY_PROP_CHARGE_VOL,
+	POWER_SUPPLY_PROP_AUTHENTICATE,
+	POWER_SUPPLY_PROP_CHARGE_TIMEOUT,
+	POWER_SUPPLY_PROP_BATTERY_REQUEST_POWEROFF,
+	POWER_SUPPLY_PROP_CHARGE_TECHNOLOGY,
+	POWER_SUPPLY_PROP_FAST_CHARGE,
+	POWER_SUPPLY_PROP_MMI_CHARGING_ENABLE,
+	POWER_SUPPLY_PROP_OTG_SWITCH,
+	POWER_SUPPLY_PROP_OTG_ONLINE,
+	POWER_SUPPLY_PROP_BATTERY_FCC,			
+	POWER_SUPPLY_PROP_BATTERY_SOH,			
+	POWER_SUPPLY_PROP_BATTERY_CC,
+	POWER_SUPPLY_PROP_BATTERY_RM,
+	POWER_SUPPLY_PROP_BATTERY_NOTIFY_CODE,
+	POWER_SUPPLY_PROP_CHARGER_IC,
+
+	POWER_SUPPLY_PROP_STATUS,
+#endif	
 	POWER_SUPPLY_PROP_CHARGE_TYPE,
 	POWER_SUPPLY_PROP_HEALTH,
 	POWER_SUPPLY_PROP_PRESENT,
@@ -140,6 +163,47 @@ enum power_supply_property {
 	POWER_SUPPLY_PROP_TIME_TO_FULL_AVG,
 	POWER_SUPPLY_PROP_TYPE, /* use power_supply.type instead */
 	POWER_SUPPLY_PROP_SCOPE,
+	/* Local extensions */
+	POWER_SUPPLY_PROP_USB_HC,
+	POWER_SUPPLY_PROP_USB_OTG,
+	POWER_SUPPLY_PROP_CHARGE_ENABLED,
+	/* Local extensions of type int64_t */
+	POWER_SUPPLY_PROP_CHARGE_COUNTER_EXT,
+	/* 20100723 James Lo */
+	POWER_SUPPLY_PROP_batt_vol,
+	POWER_SUPPLY_PROP_batt_temp,
+	/* 20100723 Add for EM */
+	POWER_SUPPLY_PROP_TemperatureR,
+	POWER_SUPPLY_PROP_TempBattVoltage,
+	POWER_SUPPLY_PROP_InstatVolt,
+	POWER_SUPPLY_PROP_BatteryAverageCurrent,
+	POWER_SUPPLY_PROP_BatterySenseVoltage,
+	POWER_SUPPLY_PROP_ISenseVoltage,
+	POWER_SUPPLY_PROP_ChargerVoltage,
+	/* Dual battery */
+	POWER_SUPPLY_PROP_status_smb,
+	POWER_SUPPLY_PROP_capacity_smb,
+	POWER_SUPPLY_PROP_present_smb,
+	/* ADB CMD Discharging */
+	POWER_SUPPLY_PROP_adjust_power,
+#ifdef VENDOR_EDIT//Fuchun.Liao@Mobile.BSP.CHG 2015-08-24 add for adapter fw update
+	POWER_SUPPLY_PROP_ADAPTER_FW_UPDATE,
+#endif
+#ifdef VENDOR_EDIT
+//Fuchun.Liao@Mobile.BSP.CHG 2016-02-04 add for voocchg_ing
+	POWER_SUPPLY_PROP_VOOCCHG_ING,
+#endif
+#ifdef VENDOR_EDIT
+// wenbin.liu@SW.Bsp.Driver, 2016/07/05  Add for for critical log 
+	POWER_SUPPLY_PROP_PRIMAL_PROPERTY,
+#endif /*VENDOR_EDIT*/
+#ifdef VENDOR_EDIT//Fanhong.Kong@PSW.BSP.CHG, 2017/10/20, Add for battery info collect
+#ifdef CONFIG_OPPO_SHORT_C_BATT_CHECK
+	POWER_SUPPLY_PROP_SHORT_C_BATT_UPDATE_CHANGE,
+	POWER_SUPPLY_PROP_SHORT_C_BATT_IN_IDLE,
+	POWER_SUPPLY_PROP_SHORT_C_BATT_CV_STATUS,
+#endif	
+#endif /*VENDOR_EDIT*/
 	/* Properties of type `const char *' */
 	POWER_SUPPLY_PROP_MODEL_NAME,
 	POWER_SUPPLY_PROP_MANUFACTURER,
@@ -155,11 +219,13 @@ enum power_supply_type {
 	POWER_SUPPLY_TYPE_USB_DCP,	/* Dedicated Charging Port */
 	POWER_SUPPLY_TYPE_USB_CDP,	/* Charging Downstream Port */
 	POWER_SUPPLY_TYPE_USB_ACA,	/* Accessory Charger Adapters */
+	POWER_SUPPLY_TYPE_WIRELESS,	/* Wireless Charger */
 };
 
 union power_supply_propval {
 	int intval;
 	const char *strval;
+	int64_t int64val;
 };
 
 struct power_supply {
@@ -194,6 +260,8 @@ struct power_supply {
 	/* private */
 	struct device *dev;
 	struct work_struct changed_work;
+	spinlock_t changed_lock;
+	bool changed;
 #ifdef CONFIG_THERMAL
 	struct thermal_zone_device *tzd;
 	struct thermal_cooling_device *tcd;

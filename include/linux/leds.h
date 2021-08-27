@@ -23,11 +23,28 @@ struct device;
  * LED Core
  */
 
+#ifndef VENDOR_EDIT
+/*guoling@MultiMedia, 2016/06/02, add for 11bits brightness dimming.*/
 enum led_brightness {
 	LED_OFF		= 0,
 	LED_HALF	= 127,
 	LED_FULL	= 255,
 };
+#else
+#ifdef OPPO_ELEVENBITS_DIMMING_SUPPORT
+enum led_brightness {
+	LED_OFF		= 0,
+	LED_HALF	= 1023,
+	LED_FULL	= 2047,
+};
+#else
+enum led_brightness {
+	LED_OFF		= 0,
+	LED_HALF	= 127,
+	LED_FULL	= 255,
+};
+#endif
+#endif
 
 struct led_classdev {
 	const char		*name;
@@ -286,3 +303,15 @@ static inline void ledtrig_cpu(enum cpu_led_event evt)
 #endif
 
 #endif		/* __LINUX_LEDS_H_INCLUDED */
+
+/*****************************************************************
+ * [MTK]The patch increases LED brightness level adjustment by adding 
+ * 
+ *
+ *
+ */
+#define LED_INCREASE_LED_LEVEL_MTKPATCH
+#ifdef LED_INCREASE_LED_LEVEL_MTKPATCH
+#define LED_RESERVEBIT_SHIFT 16
+#define LED_RESERVEBIT_PATTERN 1
+#endif

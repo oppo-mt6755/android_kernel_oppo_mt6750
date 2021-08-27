@@ -844,7 +844,8 @@ static ssize_t environ_read(struct file *file, char __user *buf,
 	int ret = 0;
 	struct mm_struct *mm = file->private_data;
 
-	if (!mm)
+	/* Ensure the process spawned far enough to have an environment. */
+	if (!mm || !mm->env_end)
 		return 0;
 
 	page = (char *)__get_free_page(GFP_TEMPORARY);
@@ -914,8 +915,8 @@ static ssize_t oom_adj_read(struct file *file, char __user *buf, size_t count,
 		if (task->signal->oom_score_adj == OOM_SCORE_ADJ_MAX)
 			oom_adj = OOM_ADJUST_MAX;
 		else
-			oom_adj = (task->signal->oom_score_adj * -OOM_DISABLE) /
-				  OOM_SCORE_ADJ_MAX;
+			oom_adj = ((task->signal->oom_score_adj * -OOM_DISABLE * 10)/OOM_SCORE_ADJ_MAX+5)
+			             /10; //modify for oom_score_adj->oom_adj round
 		unlock_task_sighand(task, &flags);
 	}
 	put_task_struct(task);
@@ -973,7 +974,7 @@ static ssize_t oom_adj_write(struct file *file, const char __user *buf,
 	if (oom_adj == OOM_ADJUST_MAX)
 		oom_adj = OOM_SCORE_ADJ_MAX;
 	else
-		oom_adj = (oom_adj * OOM_SCORE_ADJ_MAX) / -OOM_DISABLE;
+		oom_adj = ((oom_adj * OOM_SCORE_ADJ_MAX * 10) / -OOM_DISABLE + 5)/10;  //modify for oom_adj->oom_score_adj round
 
 	if (oom_adj < task->signal->oom_score_adj &&
 	    !capable(CAP_SYS_RESOURCE)) {
@@ -2488,11 +2489,16 @@ static int do_io_accounting(struct task_struct *task, char *buffer, int whole)
 	if (result)
 		return result;
 
-	if (!ptrace_may_access(task, PTRACE_MODE_READ)) {
-		result = -EACCES;
-		goto out_unlock;
-	}
-
+#ifdef VENDOR_EDIT
+//Haiping.Zhong@Swdp.Android.BuildConfig, 2016/11/22, Add for cts bug881673
+//Fang.Pan@Swdp.Android.BuildConfig,2015/10/09, Add for resmon kernel module
+/*
+    if (!ptrace_may_access(task, PTRACE_MODE_READ)) {
+        result = -EACCES;
+        goto out_unlock;
+    }
+*/
+#endif
 	if (whole && lock_task_sighand(task, &flags)) {
 		struct task_struct *t = task;
 
@@ -2517,7 +2523,11 @@ static int do_io_accounting(struct task_struct *task, char *buffer, int whole)
 			(unsigned long long)acct.read_bytes,
 			(unsigned long long)acct.write_bytes,
 			(unsigned long long)acct.cancelled_write_bytes);
-out_unlock:
+#ifdef VENDOR_EDIT
+//Haiping.Zhong@Swdp.Android.BuildConfig, 2016/11/22, Add for cts bug881673
+//Fang.Pan@Swdp.Android.BuildConfig,2015/10/09, Add for resmon kernel module
+//out_unlock:
+#endif
 	mutex_unlock(&task->signal->cred_guard_mutex);
 	return result;
 }
@@ -2711,6 +2721,12 @@ static const struct pid_entry tgid_base_stuff[] = {
 	INF("cmdline",    S_IRUGO, proc_pid_cmdline),
 	ONE("stat",       S_IRUGO, proc_tgid_stat),
 	ONE("statm",      S_IRUGO, proc_pid_statm),
+#ifdef VENDOR_EDIT
+//fangpan@Swdp.shanghai, 2016/03/31 add the vm suspend state
+#ifdef CONFIG_VM_STATE
+	ONE("vmstate",     S_IRUGO, proc_pid_vmstat),
+#endif
+#endif
 	REG("maps",       S_IRUGO, proc_pid_maps_operations),
 #ifdef CONFIG_NUMA
 	REG("numa_maps",  S_IRUGO, proc_pid_numa_maps_operations),
@@ -2749,8 +2765,10 @@ static const struct pid_entry tgid_base_stuff[] = {
 	REG("cgroup",  S_IRUGO, proc_cgroup_operations),
 #endif
 	INF("oom_score",  S_IRUGO, proc_oom_score),
-	REG("oom_adj",    S_IRUGO|S_IWUSR, proc_oom_adj_operations),
-	REG("oom_score_adj", S_IRUGO|S_IWUSR, proc_oom_score_adj_operations),
+#ifdef VENDOR_EDIT //fangpan@Swdp.shanghai,2016/01/18 add the read permission for oom_adj
+	REG("oom_adj",    S_IRUSR | S_IRGRP | S_IROTH, proc_oom_adj_operations),
+#endif
+	REG("oom_score_adj", S_IRUSR, proc_oom_score_adj_operations),
 #ifdef CONFIG_AUDITSYSCALL
 	REG("loginuid",   S_IWUSR|S_IRUGO, proc_loginuid_operations),
 	REG("sessionid",  S_IRUGO, proc_sessionid_operations),
@@ -2762,7 +2780,9 @@ static const struct pid_entry tgid_base_stuff[] = {
 	REG("coredump_filter", S_IRUGO|S_IWUSR, proc_coredump_filter_operations),
 #endif
 #ifdef CONFIG_TASK_IO_ACCOUNTING
-	INF("io",	S_IRUSR, proc_tgid_io_accounting),
+#ifdef VENDOR_EDIT //fangpan@Swdp.shanghai,2015/09/29 add for IO stats
+	INF("io",	S_IRUSR | S_IRGRP | S_IROTH, proc_tgid_io_accounting),
+#endif
 #endif
 #ifdef CONFIG_HARDWALL
 	INF("hardwall",   S_IRUGO, proc_pid_hardwall),
@@ -3066,6 +3086,12 @@ static const struct pid_entry tid_base_stuff[] = {
 	INF("cmdline",   S_IRUGO, proc_pid_cmdline),
 	ONE("stat",      S_IRUGO, proc_tid_stat),
 	ONE("statm",     S_IRUGO, proc_pid_statm),
+#ifdef VENDOR_EDIT
+//fangpan@Swdp.shanghai, 2016/03/31 add the vm suspend state
+#ifdef CONFIG_VM_STATE
+	ONE("vmstate",     S_IRUGO, proc_pid_vmstat),
+#endif
+#endif
 	REG("maps",      S_IRUGO, proc_tid_maps_operations),
 #ifdef CONFIG_CHECKPOINT_RESTORE
 	REG("children",  S_IRUGO, proc_tid_children_operations),
@@ -3106,8 +3132,8 @@ static const struct pid_entry tid_base_stuff[] = {
 	REG("cgroup",  S_IRUGO, proc_cgroup_operations),
 #endif
 	INF("oom_score", S_IRUGO, proc_oom_score),
-	REG("oom_adj",   S_IRUGO|S_IWUSR, proc_oom_adj_operations),
-	REG("oom_score_adj", S_IRUGO|S_IWUSR, proc_oom_score_adj_operations),
+	REG("oom_adj",   S_IRUSR, proc_oom_adj_operations),
+	REG("oom_score_adj", S_IRUSR, proc_oom_score_adj_operations),
 #ifdef CONFIG_AUDITSYSCALL
 	REG("loginuid",  S_IWUSR|S_IRUGO, proc_loginuid_operations),
 	REG("sessionid",  S_IRUGO, proc_sessionid_operations),
@@ -3116,7 +3142,9 @@ static const struct pid_entry tid_base_stuff[] = {
 	REG("make-it-fail", S_IRUGO|S_IWUSR, proc_fault_inject_operations),
 #endif
 #ifdef CONFIG_TASK_IO_ACCOUNTING
-	INF("io",	S_IRUSR, proc_tid_io_accounting),
+#ifdef VENDOR_EDIT //fangpan@Swdp.shanghai,2015/09/29 add for IO stats
+	INF("io",	S_IRUSR | S_IRGRP | S_IROTH, proc_tid_io_accounting),
+#endif
 #endif
 #ifdef CONFIG_HARDWALL
 	INF("hardwall",   S_IRUGO, proc_pid_hardwall),

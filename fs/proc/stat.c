@@ -9,8 +9,15 @@
 #include <linux/slab.h>
 #include <linux/time.h>
 #include <linux/irqnr.h>
+#include <linux/vmalloc.h>
 #include <asm/cputime.h>
 #include <linux/tick.h>
+
+#ifdef VENDOR_EDIT
+// wenbin.liu@PSW.BSP.MM, 2018/05/02
+// Add for get cpu load
+#include <linux/delay.h>
+#endif /*VENDOR_EDIT*/
 
 #ifndef arch_irq_stat_cpu
 #define arch_irq_stat_cpu(cpu) 0
@@ -45,10 +52,14 @@ static cputime64_t get_iowait_time(int cpu)
 
 static u64 get_idle_time(int cpu)
 {
+	#ifdef VENDOR_EDIT
+	// liangkun@Swdp.Android 2015/11/03 modify to get valid stat
+	return kcpustat_cpu(cpu).cpustat[CPUTIME_IDLE];
+	#else
 	u64 idle, idle_time = -1ULL;
 
-	if (cpu_online(cpu))
-		idle_time = get_cpu_idle_time_us(cpu, NULL);
+	/* if (cpu_online(cpu)) */
+		idle_time = get_cpu_idle_time_us_wo_cpuoffline(cpu, NULL);
 
 	if (idle_time == -1ULL)
 		/* !NO_HZ or cpu offline so we can rely on cpustat.idle */
@@ -57,14 +68,19 @@ static u64 get_idle_time(int cpu)
 		idle = usecs_to_cputime64(idle_time);
 
 	return idle;
+	#endif
 }
 
 static u64 get_iowait_time(int cpu)
 {
+	#ifdef VENDOR_EDIT
+	// liangkun@Swdp.Android 2015/11/03 modify to get valid stat
+	return kcpustat_cpu(cpu).cpustat[CPUTIME_IOWAIT];
+	#else
 	u64 iowait, iowait_time = -1ULL;
 
-	if (cpu_online(cpu))
-		iowait_time = get_cpu_iowait_time_us(cpu, NULL);
+	/* if (cpu_online(cpu)) */
+		iowait_time = get_cpu_iowait_time_us_wo_cpuoffline(cpu, NULL);
 
 	if (iowait_time == -1ULL)
 		/* !NO_HZ or cpu offline so we can rely on cpustat.iowait */
@@ -73,6 +89,7 @@ static u64 get_iowait_time(int cpu)
 		iowait = usecs_to_cputime64(iowait_time);
 
 	return iowait;
+	#endif
 }
 
 #endif
@@ -88,8 +105,7 @@ static int show_stat(struct seq_file *p, void *v)
 	unsigned int per_softirq_sums[NR_SOFTIRQS] = {0};
 	struct timespec boottime;
 
-	user = nice = system = idle = iowait =
-		irq = softirq = steal = 0;
+	user = nice = system = idle = iowait = irq = softirq = steal = 0;
 	guest = guest_nice = 0;
 	getboottime(&boottime);
 	jif = boottime.tv_sec;
@@ -130,7 +146,12 @@ static int show_stat(struct seq_file *p, void *v)
 	seq_put_decimal_ull(p, ' ', cputime64_to_clock_t(guest_nice));
 	seq_putc(p, '\n');
 
+	#ifdef VENDOR_EDIT
+	// liangkun@Swdp.shanghai 2015/11/03 modify to get all cpus stat
+	for_each_present_cpu(i) {
+	#else
 	for_each_online_cpu(i) {
+	#endif
 		/* Copy values here to work around gcc-2.95.3, gcc-2.96 */
 		user = kcpustat_cpu(i).cpustat[CPUTIME_USER];
 		nice = kcpustat_cpu(i).cpustat[CPUTIME_NICE];
@@ -168,10 +189,7 @@ static int show_stat(struct seq_file *p, void *v)
 		"procs_running %lu\n"
 		"procs_blocked %lu\n",
 		nr_context_switches(),
-		(unsigned long)jif,
-		total_forks,
-		nr_running(),
-		nr_iowait());
+		   (unsigned long)jif, total_forks, nr_running(), nr_iowait());
 
 	seq_printf(p, "softirq %llu", (unsigned long long)sum_softirq);
 
@@ -193,9 +211,10 @@ static int stat_open(struct inode *inode, struct file *file)
 	size += 2 * nr_irqs;
 
 	/* don't ask for more than the kmalloc() max size */
-	if (size > KMALLOC_MAX_SIZE)
-		size = KMALLOC_MAX_SIZE;
-	buf = kmalloc(size, GFP_KERNEL);
+	/* if (size > KMALLOC_MAX_SIZE) */
+	/* size = KMALLOC_MAX_SIZE; */
+	/* buf = kmalloc(size, GFP_KERNEL); */
+	buf = vmalloc(size);
 	if (!buf)
 		return -ENOMEM;
 
@@ -203,9 +222,11 @@ static int stat_open(struct inode *inode, struct file *file)
 	if (!res) {
 		m = file->private_data;
 		m->buf = buf;
-		m->size = ksize(buf);
+		/* m->size = ksize(buf); */
+		m->size = size;
 	} else
-		kfree(buf);
+		/* kfree(buf); */
+		vfree(buf);
 	return res;
 }
 
@@ -215,6 +236,64 @@ static const struct file_operations proc_stat_operations = {
 	.llseek		= seq_lseek,
 	.release	= single_release,
 };
+
+#ifdef VENDOR_EDIT
+// wenbin.liu@PSW.BSP.MM, 2018/05/02
+// Add for get cpu load
+struct cpu_load_stat {
+        u64 t_user;
+        u64 t_system;
+        u64 t_idle;
+        u64 t_iowait;
+        u64 t_irq;
+        u64 t_softirq;
+};
+
+int healthinfo_get_cur_cpuload(bool para_switch)
+{
+	int i;
+	struct cpu_load_stat cpu_load = { 0, 0, 0, 0, 0, 0};
+        struct cpu_load_stat cpu_load_temp = { 0, 0, 0, 0, 0, 0};
+        clock_t ct_user, ct_system, ct_idle, ct_iowait, ct_irq, ct_softirq, load, sum = 0;
+
+        if (!para_switch)
+                return -1;
+
+	for_each_online_cpu(i) {
+		cpu_load_temp.t_user += kcpustat_cpu(i).cpustat[CPUTIME_USER];
+		cpu_load_temp.t_system += kcpustat_cpu(i).cpustat[CPUTIME_SYSTEM];
+		cpu_load_temp.t_idle += get_idle_time(i);
+		cpu_load_temp.t_iowait += get_iowait_time(i);
+		cpu_load_temp.t_irq += kcpustat_cpu(i).cpustat[CPUTIME_IRQ];
+		cpu_load_temp.t_softirq += kcpustat_cpu(i).cpustat[CPUTIME_SOFTIRQ];
+	}
+        msleep(25);
+	for_each_online_cpu(i) {
+		cpu_load.t_user += kcpustat_cpu(i).cpustat[CPUTIME_USER];
+		cpu_load.t_system += kcpustat_cpu(i).cpustat[CPUTIME_SYSTEM];
+		cpu_load.t_idle += get_idle_time(i);
+		cpu_load.t_iowait += get_iowait_time(i);
+		cpu_load.t_irq += kcpustat_cpu(i).cpustat[CPUTIME_IRQ];
+		cpu_load.t_softirq += kcpustat_cpu(i).cpustat[CPUTIME_SOFTIRQ];
+	}
+
+        ct_user = cputime64_to_clock_t(cpu_load.t_user) - cputime64_to_clock_t(cpu_load_temp.t_user);
+        ct_system = cputime64_to_clock_t(cpu_load.t_system) - cputime64_to_clock_t(cpu_load_temp.t_system);
+        ct_idle = cputime64_to_clock_t(cpu_load.t_idle) - cputime64_to_clock_t(cpu_load_temp.t_idle);
+        ct_iowait = cputime64_to_clock_t(cpu_load.t_iowait) - cputime64_to_clock_t(cpu_load_temp.t_iowait);
+        ct_irq = cputime64_to_clock_t(cpu_load.t_irq) - cputime64_to_clock_t(cpu_load_temp.t_irq);
+        ct_softirq = cputime64_to_clock_t(cpu_load.t_softirq) - cputime64_to_clock_t(cpu_load_temp.t_softirq);
+
+	sum = ct_user + ct_system + ct_idle + ct_iowait + ct_irq + ct_softirq;
+        load = ct_user + ct_system + ct_iowait + ct_irq + ct_softirq;
+
+	if (sum == 0)
+		return -1;
+
+	return 100 * load / sum;
+}
+
+#endif /*VENDOR_EDIT*/
 
 static int __init proc_stat_init(void)
 {

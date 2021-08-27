@@ -46,6 +46,7 @@
 #include "truncate.h"
 
 #include <trace/events/ext4.h>
+#include <linux/blkdev.h>
 
 #define MPAGE_DA_EXTENT_TAIL 0x01
 
@@ -626,6 +627,10 @@ int ext4_map_blocks(handle_t *handle, struct inode *inode,
 		status = map->m_flags & EXT4_MAP_UNWRITTEN ?
 				EXTENT_STATUS_UNWRITTEN : EXTENT_STATUS_WRITTEN;
 		if (!(flags & EXT4_GET_BLOCKS_DELALLOC_RESERVE) &&
+#ifdef VENDOR_EDIT
+//Zhilong.zhang@Phone.Bsp.Driver, 2016/03/30, added kernel patch:fix data corruption caused by unwritten and delayed extents
+		    !(status & EXTENT_STATUS_WRITTEN) &&
+#endif /*VENDOR_EDIT*/		
 		    ext4_find_delalloc_range(inode, map->m_lblk,
 					     map->m_lblk + map->m_len - 1))
 			status |= EXTENT_STATUS_DELAYED;
@@ -736,6 +741,10 @@ found:
 		status = map->m_flags & EXT4_MAP_UNWRITTEN ?
 				EXTENT_STATUS_UNWRITTEN : EXTENT_STATUS_WRITTEN;
 		if (!(flags & EXT4_GET_BLOCKS_DELALLOC_RESERVE) &&
+#ifdef VENDOR_EDIT
+//Zhilong.zhang@Phone.Bsp.Driver, 2016/03/30, added kernel patch:fix data corruption caused by unwritten and delayed extents
+		    !(status & EXTENT_STATUS_WRITTEN) &&
+#endif /*VENDOR_EDIT*/		
 		    ext4_find_delalloc_range(inode, map->m_lblk,
 					     map->m_lblk + map->m_len - 1))
 			status |= EXTENT_STATUS_DELAYED;
@@ -751,6 +760,20 @@ has_zeroout:
 		int ret = check_block_validity(inode, map);
 		if (ret != 0)
 			return ret;
+
+               /*
+                * Inodes with freshly allocated blocks where contents will be
+                * visible after transaction commit must be on transaction's
+                * ordered data list.
+                */
+               if (map->m_flags & EXT4_MAP_NEW &&
+                   !(map->m_flags & EXT4_MAP_UNWRITTEN) &&
+                   !IS_NOQUOTA(inode) &&
+                   ext4_should_order_data(inode)) {
+                       ret = ext4_jbd2_file_inode(handle, inode);
+                       if (ret)
+                               return ret;
+               }
 	}
 	return retval;
 }
@@ -982,6 +1005,13 @@ static int ext4_write_begin(struct file *file, struct address_space *mapping,
 	struct page *page;
 	pgoff_t index;
 	unsigned from, to;
+#if defined(FEATURE_STORAGE_PID_LOGGER)
+		extern unsigned char *page_logger;
+		struct page_pid_logger *tmp_logger;
+		unsigned long page_index;
+		extern spinlock_t g_locker;
+		unsigned long g_flags;
+#endif
 
 	trace_ext4_write_begin(inode, pos, len, flags);
 	/*
@@ -1030,7 +1060,13 @@ retry_journal:
 		ext4_journal_stop(handle);
 		goto retry_grab;
 	}
+#ifndef VENDOR_EDIT
+//Zhilong.zhang@Phone.Bsp.Driver, 2016/03/30, added kernel patch: convert write_begin methods to stable_page_writes semantics	
 	wait_on_page_writeback(page);
+#else
+	/* In case writeback began while the page was unlocked */
+	wait_for_stable_page(page);
+#endif /*VENDOR_EDIT*/	
 
 	if (ext4_should_dioread_nolock(inode))
 		ret = __block_write_begin(page, pos, len, ext4_get_block_write);
@@ -1076,6 +1112,24 @@ retry_journal:
 		return ret;
 	}
 	*pagep = page;
+#if defined(FEATURE_STORAGE_PID_LOGGER)
+		if( page_logger && (*pagep)) {
+			//#if defined(CONFIG_FLATMEM)
+			//page_index = (unsigned long)((*pagep) - mem_map) ;
+			//#else
+			page_index = (unsigned long)(__page_to_pfn(*pagep))- PHYS_PFN_OFFSET;
+			//#endif
+			tmp_logger =((struct page_pid_logger *)page_logger) + page_index;
+			spin_lock_irqsave(&g_locker, g_flags);
+			if( page_index < num_physpages) {
+				if( tmp_logger->pid1 == 0XFFFF)
+					tmp_logger->pid1 = current->pid;
+				else if( tmp_logger->pid1 != current->pid)
+					tmp_logger->pid2 = current->pid;
+			}
+			spin_unlock_irqrestore(&g_locker, g_flags);
+		}
+#endif
 	return ret;
 }
 
@@ -1110,15 +1164,6 @@ static int ext4_write_end(struct file *file,
 	int i_size_changed = 0;
 
 	trace_ext4_write_end(inode, pos, len, copied);
-	if (ext4_test_inode_state(inode, EXT4_STATE_ORDERED_MODE)) {
-		ret = ext4_jbd2_file_inode(handle, inode);
-		if (ret) {
-			unlock_page(page);
-			page_cache_release(page);
-			goto errout;
-		}
-	}
-
 	if (ext4_has_inline_data(inode)) {
 		ret = ext4_write_inline_data_end(inode, pos, len,
 						 copied, page);
@@ -2096,18 +2141,31 @@ static int __ext4_journalled_writepage(struct page *page,
 		ext4_walk_page_buffers(handle, page_bufs, 0, len,
 				       NULL, bget_one);
 	}
-	/* As soon as we unlock the page, it can go away, but we have
-	 * references to buffers so we are safe */
+	/*
+	 * We need to release the page lock before we start the
+	 * journal, so grab a reference so the page won't disappear
+	 * out from under us.
+	 */
+	get_page(page);
 	unlock_page(page);
 
 	handle = ext4_journal_start(inode, EXT4_HT_WRITE_PAGE,
 				    ext4_writepage_trans_blocks(inode));
 	if (IS_ERR(handle)) {
 		ret = PTR_ERR(handle);
+		put_page(page);
+		goto out_no_pagelock;
+	}
+	BUG_ON(!ext4_handle_valid(handle));
+
+	lock_page(page);
+	put_page(page);
+	if (page->mapping != mapping) {
+		/* The page got truncated from under us */
+		ext4_journal_stop(handle);
+		ret = 0;
 		goto out;
 	}
-
-	BUG_ON(!ext4_handle_valid(handle));
 
 	if (inline_data) {
 		ret = ext4_journal_get_write_access(handle, inode_bh);
@@ -2133,6 +2191,8 @@ static int __ext4_journalled_writepage(struct page *page,
 				       NULL, bput_one);
 	ext4_set_inode_state(inode, EXT4_STATE_JDATA);
 out:
+	unlock_page(page);
+out_no_pagelock:
 	brelse(inode_bh);
 	return ret;
 }
@@ -2727,7 +2787,12 @@ retry_journal:
 		goto retry_grab;
 	}
 	/* In case writeback began while the page was unlocked */
+#ifndef VENDOR_EDIT
+//Zhilong.zhang@Phone.Bsp.Driver, 2016/03/30, added kernel patch: convert write_begin methods to stable_page_writes semantics	
 	wait_on_page_writeback(page);
+#else
+	wait_for_stable_page(page);
+#endif /*VENDOR_EDIT*/
 
 	ret = __block_write_begin(page, pos, len, ext4_da_get_block_prep);
 	if (ret < 0) {
@@ -3923,7 +3988,8 @@ static int __ext4_get_inode_loc(struct inode *inode,
 	int			inodes_per_block, inode_offset;
 
 	iloc->bh = NULL;
-	if (!ext4_valid_inum(sb, inode->i_ino))
+       if (inode->i_ino < EXT4_ROOT_INO ||
+           inode->i_ino > le32_to_cpu(EXT4_SB(sb)->s_es->s_inodes_count))
 		return -EIO;
 
 	iloc->block_group = (inode->i_ino - 1) / EXT4_INODES_PER_GROUP(sb);
@@ -4036,6 +4102,10 @@ make_io:
 		trace_ext4_load_inode(inode);
 		get_bh(bh);
 		bh->b_end_io = end_buffer_read_sync;
+#ifdef FEATURE_STORAGE_META_LOG
+		if( bh && bh->b_bdev && bh->b_bdev->bd_disk)
+			set_metadata_rw_status(bh->b_bdev->bd_disk->first_minor, WAIT_READ_CNT);
+#endif
 		submit_bh(READ | REQ_META | REQ_PRIO, bh);
 		wait_on_buffer(bh);
 		if (!buffer_uptodate(bh)) {

@@ -40,6 +40,9 @@
 #include <linux/crc16.h>
 #include <linux/cleancache.h>
 #include <asm/uaccess.h>
+#ifdef CONFIG_PWR_LOSS_MTK_SPOH
+#include <mach/power_loss_test.h>
+#endif
 
 #include <linux/kthread.h>
 #include <linux/freezer.h>
@@ -146,12 +149,29 @@ int ext4_superblock_csum_verify(struct super_block *sb,
 	return es->s_checksum == ext4_superblock_csum(sb, es);
 }
 
+#ifdef VENDOR_EDIT
+//Geliang.Tang@Swdp.Android.Kernel, 2015/05/29, fix the mount error when s_chksum_driver is NULL.
+static inline int ext4_has_metadata_csum(struct super_block *sb)
+{
+    WARN_ON_ONCE(EXT4_HAS_RO_COMPAT_FEATURE(sb,
+                EXT4_FEATURE_RO_COMPAT_METADATA_CSUM) &&
+            !EXT4_SB(sb)->s_chksum_driver);
+
+    return (EXT4_SB(sb)->s_chksum_driver != NULL);
+}
+#endif  /* VENDOR_EDIT */
+
 void ext4_superblock_csum_set(struct super_block *sb)
 {
 	struct ext4_super_block *es = EXT4_SB(sb)->s_es;
 
-	if (!EXT4_HAS_RO_COMPAT_FEATURE(sb,
-		EXT4_FEATURE_RO_COMPAT_METADATA_CSUM))
+#ifdef VENDOR_EDIT
+//Geliang.Tang@Swdp.Android.Kernel, 2015/05/29, fix the mount error when s_chksum_driver is NULL.
+    if (!ext4_has_metadata_csum(sb))
+#else
+    if (!EXT4_HAS_RO_COMPAT_FEATURE(sb,
+        EXT4_FEATURE_RO_COMPAT_METADATA_CSUM))
+#endif /* VENDOR_EDIT */
 		return;
 
 	es->s_checksum = ext4_superblock_csum(sb, es);
@@ -400,9 +420,20 @@ static void ext4_handle_error(struct super_block *sb)
 		ext4_msg(sb, KERN_CRIT, "Remounting filesystem read-only");
 		sb->s_flags |= MS_RDONLY;
 	}
+#ifndef VENDOR_EDIT
+//Wenxian.Zhen@Prd.BaseDrv, 2016/05/25, modify for linux patch :ext4, jbd2: ensure entering into panic after recording an error in superblock
 	if (test_opt(sb, ERRORS_PANIC))
 		panic("EXT4-fs (device %s): panic forced after error\n",
 			sb->s_id);
+#else/* VENDOR_EDIT */
+	if (test_opt(sb, ERRORS_PANIC)) {
+		if (EXT4_SB(sb)->s_journal &&
+			!(EXT4_SB(sb)->s_journal->j_flags & JBD2_REC_ERR))
+			return;
+		panic("EXT4-fs (device %s): panic forced after error\n",
+			sb->s_id);
+		}
+#endif /* VENDOR_EDIT */
 }
 
 void __ext4_error(struct super_block *sb, const char *function,
@@ -576,8 +607,19 @@ void __ext4_abort(struct super_block *sb, const char *function,
 			jbd2_journal_abort(EXT4_SB(sb)->s_journal, -EIO);
 		save_error_info(sb, function, line);
 	}
+
+#ifndef VENDOR_EDIT
+//Wenxian.Zhen@Prd.BaseDrv, 2016/05/25, modify for linux patch :ext4, jbd2: ensure entering into panic after recording an error in superblock	
 	if (test_opt(sb, ERRORS_PANIC))
 		panic("EXT4-fs panic from previous error\n");
+#else/* VENDOR_EDIT */
+	if (test_opt(sb, ERRORS_PANIC)) {
+		if (EXT4_SB(sb)->s_journal &&
+			!(EXT4_SB(sb)->s_journal->j_flags & JBD2_REC_ERR))
+			return;
+		panic("EXT4-fs panic from previous error\n");
+		}
+#endif /* VENDOR_EDIT */
 }
 
 void ext4_msg(struct super_block *sb, const char *prefix, const char *fmt, ...)
@@ -1841,6 +1883,10 @@ static int ext4_setup_super(struct super_block *sb, struct ext4_super_block *es,
 	if (sbi->s_journal)
 		EXT4_SET_INCOMPAT_FEATURE(sb, EXT4_FEATURE_INCOMPAT_RECOVER);
 
+#ifdef CONFIG_PWR_LOSS_MTK_SPOH
+        PL_RESET_ON_CASE("EXT4", "Mount");
+#endif
+
 	ext4_commit_super(sb, 1);
 done:
 	if (test_opt(sb, DEBUG))
@@ -2811,6 +2857,7 @@ static int ext4_lazyinit_thread(void *arg)
 	unsigned long next_wakeup, cur;
 
 	BUG_ON(NULL == eli);
+	set_freezable();
 
 cont_thread:
 	while (true) {
@@ -2850,7 +2897,7 @@ cont_thread:
 
 		schedule_timeout_interruptible(next_wakeup - cur);
 
-		if (kthread_should_stop()) {
+		if (kthread_freezable_should_stop(NULL)) {
 			ext4_clear_request_list();
 			goto exit_thread;
 		}
@@ -2923,13 +2970,22 @@ static ext4_group_t ext4_has_uninit_itable(struct super_block *sb)
 	ext4_group_t group, ngroups = EXT4_SB(sb)->s_groups_count;
 	struct ext4_group_desc *gdp = NULL;
 
+	if (!ext4_has_group_desc_csum(sb))
+		return ngroups;
+
 	for (group = 0; group < ngroups; group++) {
 		gdp = ext4_get_group_desc(sb, group, NULL);
 		if (!gdp)
 			continue;
 
-		if (!(gdp->bg_flags & cpu_to_le16(EXT4_BG_INODE_ZEROED)))
+		if (gdp->bg_flags & cpu_to_le16(EXT4_BG_INODE_ZEROED))
+			continue;
+		if (group != 0)
 			break;
+		ext4_error(sb, "Inode table for bg 0 marked as "
+			   "needing zeroing");
+		if (sb->s_flags & MS_RDONLY)
+			return ngroups;
 	}
 
 	return group;
@@ -3317,7 +3373,12 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
 		logical_sb_block = sb_block;
 	}
 
+#if defined(CONFIG_CMA) && defined(CONFIG_MTK_SVP)
+	bh = sb_bread_unmovable(sb, logical_sb_block);
+	if (!(bh)) {
+#else
 	if (!(bh = sb_bread(sb, logical_sb_block))) {
+#endif
 		ext4_msg(sb, KERN_ERR, "unable to read superblock");
 		goto out_fail;
 	}
@@ -3517,7 +3578,11 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
 		brelse(bh);
 		logical_sb_block = sb_block * EXT4_MIN_BLOCK_SIZE;
 		offset = do_div(logical_sb_block, blocksize);
+#if defined(CONFIG_CMA) && defined(CONFIG_MTK_SVP)
+		bh = sb_bread_unmovable(sb, logical_sb_block);
+#else
 		bh = sb_bread(sb, logical_sb_block);
+#endif
 		if (!bh) {
 			ext4_msg(sb, KERN_ERR,
 			       "Can't read superblock on 2nd try");
@@ -3544,6 +3609,11 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
 	} else {
 		sbi->s_inode_size = le16_to_cpu(es->s_inode_size);
 		sbi->s_first_ino = le32_to_cpu(es->s_first_ino);
+		if (sbi->s_first_ino < EXT4_GOOD_OLD_FIRST_INO) {
+			ext4_msg(sb, KERN_ERR, "invalid first ino: %u",
+				 sbi->s_first_ino);
+			goto failed_mount;
+		}
 		if ((sbi->s_inode_size < EXT4_GOOD_OLD_INODE_SIZE) ||
 		    (!is_power_of_2(sbi->s_inode_size)) ||
 		    (sbi->s_inode_size > blocksize)) {
@@ -3739,7 +3809,11 @@ static int ext4_fill_super(struct super_block *sb, void *data, int silent)
 
 	for (i = 0; i < db_count; i++) {
 		block = descriptor_loc(sb, logical_sb_block, i);
+#if defined(CONFIG_CMA) && defined(CONFIG_MTK_SVP)
+		sbi->s_group_desc[i] = sb_bread_unmovable(sb, block);
+#else
 		sbi->s_group_desc[i] = sb_bread(sb, block);
+#endif
 		if (!sbi->s_group_desc[i]) {
 			ext4_msg(sb, KERN_ERR,
 			       "can't read group descriptor %d", i);
@@ -4621,6 +4695,8 @@ static int ext4_remount(struct super_block *sb, int *flags, char *data)
 	int i, j;
 #endif
 	char *orig_data = kstrdup(data, GFP_KERNEL);
+
+	sync_filesystem(sb);
 
 	/* Store the original options */
 	old_sb_flags = sb->s_flags;

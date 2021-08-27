@@ -191,6 +191,12 @@ struct sock_common {
 #ifdef CONFIG_NET_NS
 	struct net	 	*skc_net;
 #endif
+#ifdef VENDOR_EDIT
+//Jiemin.Zhu@Swdp.Android.OppoFeature.TrafficMonitor, 2016/10/28,
+//add for count TCP_TIME_WAIT state to corresponding process
+	uid_t skc_uid;
+	char skc_cmdline[TASK_COMM_LEN];
+#endif /* VENDOR_EDIT */
 	/*
 	 * fields between dontcopy_begin/dontcopy_end
 	 * are not copied in sock_copy()
@@ -305,6 +311,10 @@ struct sock {
 #define sk_bind_node		__sk_common.skc_bind_node
 #define sk_prot			__sk_common.skc_prot
 #define sk_net			__sk_common.skc_net
+#ifdef VENDOR_EDIT
+#define sk_uid			__sk_common.skc_uid
+#define sk_cmdline			__sk_common.skc_cmdline
+#endif /* VENDOR_EDIT */
 	socket_lock_t		sk_lock;
 	struct sk_buff_head	sk_receive_queue;
 	/*
@@ -780,8 +790,12 @@ static inline __must_check int sk_add_backlog(struct sock *sk, struct sk_buff *s
 					      unsigned int limit)
 {
 	if (sk_rcvqueues_full(sk, skb, limit))
+	{
+		#ifdef CONFIG_MTK_NET_LOGGING 
+		printk(KERN_ERR "[mtk_net][sock]sk_add_backlog->sk_rcvqueues_full sk->sk_rcvbuf:%d,sk->sk_sndbuf:%d ",sk->sk_rcvbuf,sk->sk_sndbuf);
+		#endif		
 		return -ENOBUFS;
-
+	}
 	__sk_add_backlog(sk, skb);
 	sk->sk_backlog.len += skb->truesize;
 	return 0;

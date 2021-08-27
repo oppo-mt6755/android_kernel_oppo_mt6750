@@ -36,6 +36,7 @@
 #include <linux/hugetlb_cgroup.h>
 #include <linux/gfp.h>
 #include <linux/balloon_compaction.h>
+#include <linux/ptrace.h>
 
 #include <asm/tlbflush.h>
 
@@ -713,6 +714,70 @@ static int move_to_new_page(struct page *newpage, struct page *page,
 	return rc;
 }
 
+#if defined(CONFIG_CMA) && defined(CONFIG_MTK_SVP)
+/*
+ * Move a page to a newly allocated page
+ * The page is locked and all ptes have been successfully removed.
+ *
+ * The new page will have replaced the old page if this function
+ * is successful.
+ *
+ * Return value:
+ *   < 0 - error code
+ *  MIGRATEPAGE_SUCCESS - success
+ */
+static int move_to_new_page_mlocked(struct page *newpage, struct page *page,
+				int remap_swapcache, enum migrate_mode mode)
+{
+	struct address_space *mapping;
+	int rc;
+
+	/*
+	 * Block others from accessing the page when we get around to
+	 * establishing additional references. We are the only one
+	 * holding a reference to the new page at this point.
+	 */
+	if (!trylock_page(newpage))
+		BUG();
+
+	/* Prepare mapping for the new page.*/
+	newpage->index = page->index;
+	newpage->mapping = page->mapping;
+	if (PageSwapBacked(page))
+		SetPageSwapBacked(newpage);
+
+	mapping = page_mapping(page);
+	if (!mapping)
+		rc = migrate_page(mapping, newpage, page, mode);
+	else if (mapping->a_ops->migratepage)
+		/*
+		 * Most pages have a mapping and most filesystems provide a
+		 * migratepage callback. Anonymous pages are part of swap
+		 * space which also has its own migratepage callback. This
+		 * is the most common path for page migration.
+		 */
+		rc = mapping->a_ops->migratepage(mapping,
+						newpage, page, mode);
+	else
+		rc = fallback_migrate_page(mapping, newpage, page, mode);
+
+	if (rc != MIGRATEPAGE_SUCCESS) {
+		newpage->mapping = NULL;
+	} else {
+		if (remap_swapcache)
+			remove_migration_ptes(page, newpage);
+		page->mapping = NULL;
+	}
+
+	if (rc == MIGRATEPAGE_SUCCESS)
+		mlock_vma_page(newpage);
+
+	unlock_page(newpage);
+
+	return rc;
+}
+#endif
+
 static int __unmap_and_move(struct page *page, struct page *newpage,
 				int force, enum migrate_mode mode)
 {
@@ -720,6 +785,9 @@ static int __unmap_and_move(struct page *page, struct page *newpage,
 	int remap_swapcache = 1;
 	struct mem_cgroup *mem;
 	struct anon_vma *anon_vma = NULL;
+#if defined(CONFIG_CMA) && defined(CONFIG_MTK_SVP)
+	int mlocked = 0;
+#endif
 
 	if (!trylock_page(page)) {
 		if (!force || mode == MIGRATE_ASYNC)
@@ -832,12 +900,27 @@ static int __unmap_and_move(struct page *page, struct page *newpage,
 		goto skip_unmap;
 	}
 
+#if defined(CONFIG_CMA) && defined(CONFIG_MTK_SVP)
+	mlocked = PageMlocked(page);
+#endif
+
 	/* Establish migration ptes or remove ptes */
 	try_to_unmap(page, TTU_MIGRATION|TTU_IGNORE_MLOCK|TTU_IGNORE_ACCESS);
 
 skip_unmap:
+#if !defined(CONFIG_CMA) || !defined(CONFIG_MTK_SVP)
 	if (!page_mapped(page))
 		rc = move_to_new_page(newpage, page, remap_swapcache, mode);
+#else
+	if (!page_mapped(page)) {
+		if (mlocked)
+			rc = move_to_new_page_mlocked(newpage, page,
+						remap_swapcache, mode);
+		else
+			rc = move_to_new_page(newpage, page,
+						remap_swapcache, mode);
+	}
+#endif
 
 	if (rc && remap_swapcache)
 		remove_migration_ptes(page, page);
@@ -1369,7 +1452,6 @@ SYSCALL_DEFINE6(move_pages, pid_t, pid, unsigned long, nr_pages,
 		const int __user *, nodes,
 		int __user *, status, int, flags)
 {
-	const struct cred *cred = current_cred(), *tcred;
 	struct task_struct *task;
 	struct mm_struct *mm;
 	int err;
@@ -1393,14 +1475,9 @@ SYSCALL_DEFINE6(move_pages, pid_t, pid, unsigned long, nr_pages,
 
 	/*
 	 * Check if this process has the right to modify the specified
-	 * process. The right exists if the process has administrative
-	 * capabilities, superuser privileges or the same
-	 * userid as the target process.
+	 * process. Use the regular "ptrace_may_access()" checks.
 	 */
-	tcred = __task_cred(task);
-	if (!uid_eq(cred->euid, tcred->suid) && !uid_eq(cred->euid, tcred->uid) &&
-	    !uid_eq(cred->uid,  tcred->suid) && !uid_eq(cred->uid,  tcred->uid) &&
-	    !capable(CAP_SYS_NICE)) {
+	if (!ptrace_may_access(task, PTRACE_MODE_READ_REALCREDS)) {
 		rcu_read_unlock();
 		err = -EPERM;
 		goto out;
@@ -1468,7 +1545,7 @@ static bool migrate_balanced_pgdat(struct pglist_data *pgdat,
 		if (!populated_zone(zone))
 			continue;
 
-		if (zone->all_unreclaimable)
+		if (!zone_reclaimable(zone))
 			continue;
 
 		/* Avoid waking kswapd by allocating pages_to_migrate pages. */

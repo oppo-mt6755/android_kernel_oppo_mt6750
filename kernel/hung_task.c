@@ -16,6 +16,14 @@
 #include <linux/export.h>
 #include <linux/sysctl.h>
 
+#ifdef VENDOR_EDIT
+/* fanhui@PhoneSW.BSP, 2016/02/02, DeathHealer, record the hung task killing
+ * format: task_name,reason. e.g. system_server,uninterruptible for 60 secs
+ */
+#define HUNG_TASK_OPPO_KILL_LEN	128
+char __read_mostly sysctl_hung_task_oppo_kill[HUNG_TASK_OPPO_KILL_LEN];
+#endif
+
 /*
  * The number of tasks checked:
  */
@@ -77,7 +85,20 @@ static void check_hung_task(struct task_struct *t, unsigned long timeout)
 	 * Also, skip vfork and any other user process that freezer should skip.
 	 */
 	if (unlikely(t->flags & (PF_FROZEN | PF_FREEZER_SKIP)))
-	    return;
+#if defined(VENDOR_EDIT) && defined(CONFIG_DEATH_HEALER) && defined(OPPO_RELEASE_FLAG)
+/* fanhui@PhoneSW.BSP, 2016/02/02, DeathHealer, kill D/T/t state tasks */
+	{
+		if (!strncmp(t->comm,"main", TASK_COMM_LEN) || !strncmp(t->comm,"system_server", TASK_COMM_LEN)
+			|| !strncmp(t->comm,"surfaceflinger", TASK_COMM_LEN)) {
+			if (t->flags & PF_FROZEN)
+				return;
+		}
+		else
+			return;
+	}
+#else
+		return;
+#endif
 
 	/*
 	 * When a freshly created task is scheduled once, changes its state to
@@ -91,6 +112,28 @@ static void check_hung_task(struct task_struct *t, unsigned long timeout)
 		t->last_switch_count = switch_count;
 		return;
 	}
+
+#if defined(VENDOR_EDIT) && defined(CONFIG_DEATH_HEALER) && defined(OPPO_RELEASE_FLAG)
+/* fanhui@PhoneSW.BSP, 2016/02/02, DeathHealer, kill D/T/t state tasks */
+	if (!strncmp(t->comm,"main", TASK_COMM_LEN) || !strncmp(t->comm,"system_server", TASK_COMM_LEN)
+		|| !strncmp(t->comm,"surfaceflinger", TASK_COMM_LEN) ) {
+		if (t->state == TASK_UNINTERRUPTIBLE)
+			snprintf(sysctl_hung_task_oppo_kill, HUNG_TASK_OPPO_KILL_LEN, "%s,uninterruptible for %ld seconds", t->comm, timeout);
+		else if (t->state == TASK_STOPPED)
+			snprintf(sysctl_hung_task_oppo_kill, HUNG_TASK_OPPO_KILL_LEN, "%s,stopped for %ld seconds", t->comm, timeout);
+		else if (t->state == TASK_TRACED)
+			snprintf(sysctl_hung_task_oppo_kill, HUNG_TASK_OPPO_KILL_LEN, "%s,traced for %ld seconds", t->comm, timeout);
+		else
+			snprintf(sysctl_hung_task_oppo_kill, HUNG_TASK_OPPO_KILL_LEN, "%s,unknown hung for %ld seconds", t->comm, timeout);
+
+		printk(KERN_ERR "DeathHealer: task %s:%d blocked for more than %ld seconds in state 0x%lx.\n",
+			t->comm, t->pid, timeout, t->state);
+		t->flags |= PF_OPPO_KILLING;
+		do_send_sig_info(SIGKILL, SEND_SIG_FORCED, t, true);
+		wake_up_process(t);
+	}
+#endif
+
 	if (!sysctl_hung_task_warnings)
 		return;
 	sysctl_hung_task_warnings--;
@@ -165,7 +208,12 @@ static void check_hung_uninterruptible_tasks(unsigned long timeout)
 				goto unlock;
 		}
 		/* use "==" to skip the TASK_KILLABLE tasks waiting on NFS */
+#if defined(VENDOR_EDIT) && defined(CONFIG_DEATH_HEALER) && defined(OPPO_RELEASE_FLAG)
+/* fanhui@PhoneSW.BSP, 2016/02/02, DeathHealer, detect D/T/t state tasks */
+		if (t->state == TASK_UNINTERRUPTIBLE || t->state == TASK_STOPPED || t->state == TASK_TRACED)
+#else
 		if (t->state == TASK_UNINTERRUPTIBLE)
+#endif
 			check_hung_task(t, timeout);
 	} while_each_thread(g, t);
  unlock:

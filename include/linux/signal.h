@@ -152,6 +152,20 @@ _SIG_SET_OP(signotset, _sig_not)
 #undef _SIG_SET_OP
 #undef _sig_not
 
+#ifdef VENDOR_EDIT
+//fangpan@Swdp.shanghai, 2017/05/05 add the vm suspend signal mask
+#ifdef CONFIG_VM_STATE
+#define SIGVM_LOW_MASK   (sigmask(SIGPROCSUSPEND - SIGRTMIN) | \
+                        sigmask(SIGPROCRESUME - SIGRTMIN) | \
+                        sigmask(SIGVMSUSPEND - SIGRTMIN) |\
+                        sigmask(SIGVMRESUME - SIGRTMIN))
+#define SIGVM_MASK   (sigmask(SIGPROCSUSPEND) | \
+                        sigmask(SIGPROCRESUME) | \
+                        sigmask(SIGVMSUSPEND) |\
+                        sigmask(SIGVMRESUME))
+#endif
+#endif
+
 static inline void sigemptyset(sigset_t *set)
 {
 	switch (_NSIG_WORDS) {

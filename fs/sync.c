@@ -197,15 +197,30 @@ int vfs_fsync(struct file *file, int datasync)
 }
 EXPORT_SYMBOL(vfs_fsync);
 
+#ifdef VENDOR_EDIT
+// wenbin.liu@PSW.BSP.MM, 2018/08/06
+// Add for record  fsync  time
+extern void fsync_time_cal(int fg, u64 fsync_time);
+#endif /*VENDOR_EDIT*/
 static int do_fsync(unsigned int fd, int datasync)
 {
 	struct fd f = fdget(fd);
 	int ret = -EBADF;
+#ifdef VENDOR_EDIT
+// wenbin.liu@PSW.BSP.MM, 2018/08/06
+// Add for record  fsync  time
+        unsigned long oppo_fsync_time = jiffies;
+#endif /*VENDOR_EDIT*/
 
 	if (f.file) {
 		ret = vfs_fsync(f.file, datasync);
 		fdput(f);
 	}
+#ifdef VENDOR_EDIT
+// wenbin.liu@PSW.BSP.MM, 2018/08/06
+// Add for record  fsync  time
+        fsync_time_cal(current_is_fg(), jiffies_to_msecs(jiffies - oppo_fsync_time));
+#endif /*VENDOR_EDIT*/
 	return ret;
 }
 

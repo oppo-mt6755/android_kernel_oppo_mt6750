@@ -394,7 +394,8 @@ static inline int dst_neigh_output(struct dst_entry *dst, struct neighbour *n,
 				   struct sk_buff *skb)
 {
 	const struct hh_cache *hh;
-
+	/*remove dst confirm for oppo issue*/
+#if 0
 	if (dst->pending_confirm) {
 		unsigned long now = jiffies;
 
@@ -403,7 +404,7 @@ static inline int dst_neigh_output(struct dst_entry *dst, struct neighbour *n,
 		if (n->confirmed != now)
 			n->confirmed = now;
 	}
-
+#endif
 	hh = &n->hh;
 	if ((n->nud_state & NUD_CONNECTED) && hh->hh_len)
 		return neigh_hh_output(hh, skb);

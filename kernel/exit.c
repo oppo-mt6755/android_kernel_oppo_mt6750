@@ -53,6 +53,8 @@
 #include <linux/oom.h>
 #include <linux/writeback.h>
 #include <linux/shm.h>
+#include "mt_sched_mon.h"
+#include "mt_cputime.h"
 
 #include <asm/uaccess.h>
 #include <asm/unistd.h>
@@ -718,6 +720,15 @@ void do_exit(long code)
 	int group_dead;
 
 	profile_task_exit(tsk);
+#ifdef CONFIG_SCHEDSTATS
+	/* mt shceduler profiling*/
+#ifdef VENDOR_EDIT//Fanhong.Kong@ProDrv.CHG,add 2015/12/15 for yanghui debug	
+	printk(KERN_DEBUG "[%d:%s] exit\n", tsk->pid, tsk->comm);
+#endif/*VENDOR_EDIT*/
+	end_mtproc_info(tsk);
+#endif
+	/* mt throttle monitor */
+	end_mt_rt_mon_info(tsk);
 
 	WARN_ON(blk_needs_flush_plug(tsk));
 
@@ -841,7 +852,7 @@ void do_exit(long code)
 	/*
 	 * Make sure we are holding no locks:
 	 */
-	debug_check_no_locks_held(tsk);
+	debug_check_no_locks_held();
 	/*
 	 * We can do this unlocked here. The futex code uses this flag
 	 * just to verify whether the pi state cleanup has been done

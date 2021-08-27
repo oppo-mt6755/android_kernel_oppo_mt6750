@@ -182,8 +182,14 @@ static inline struct pin_desc *pin_desc_get(struct pinctrl_dev *pctldev,
 	return radix_tree_lookup(&pctldev->pin_desc_tree, pin);
 }
 
+#ifndef VENDOR_EDIT 
+// wenxian.zhen@Phone.Bsp.Driver, 2016/03/30  modified for force add lock, avoid  die during boot	
 int pinctrl_register_map(struct pinctrl_map const *maps, unsigned num_maps,
 			 bool dup, bool locked);
+#else
+int pinctrl_register_map(struct pinctrl_map const *maps, unsigned num_maps,
+			 bool dup);
+#endif
 void pinctrl_unregister_map(struct pinctrl_map const *map);
 
 extern int pinctrl_force_sleep(struct pinctrl_dev *pctldev);

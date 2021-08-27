@@ -977,6 +977,10 @@ struct journal_s
 #define JBD2_ABORT_ON_SYNCDATA_ERR	0x040	/* Abort the journal on file
 						 * data write error in ordered
 						 * mode */
+#ifdef VENDOR_EDIT
+//Wenxian.Zhen@Prd.BaseDrv, 2016/05/25, added for linux patch :ext4, jbd2: ensure entering into panic after recording an error in superblock	
+#define JBD2_REC_ERR	0x080	/* The errno in the sb has been recorded */ 
+#endif /* VENDOR_EDIT */
 
 /*
  * Function declarations for the journaling transaction and buffer

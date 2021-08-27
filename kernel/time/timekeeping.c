@@ -23,6 +23,7 @@
 #include <linux/stop_machine.h>
 #include <linux/pvclock_gtod.h>
 
+#include <mach/mt_ccci_common.h>
 #include "tick-internal.h"
 #include "ntp_internal.h"
 
@@ -171,8 +172,8 @@ static inline s64 timekeeping_get_ns(struct timekeeper *tk)
 	/* calculate the delta since the last update_wall_time: */
 	cycle_delta = (cycle_now - clock->cycle_last) & clock->mask;
 
-	nsec = cycle_delta * tk->mult + tk->xtime_nsec;
-	nsec >>= tk->shift;
+	/* kernel patch from with commit ID:35a4933a895927990772ae96fdcfd2f806929ee2 */
+	nsec = (cycle_delta * tk->mult + tk->xtime_nsec) >> tk->shift;
 
 	/* If arch requires, add in get_arch_timeoffset() */
 	return nsec + get_arch_timeoffset();
@@ -516,6 +517,9 @@ int do_settimeofday(const struct timespec *tv)
 	/* signal hrtimers about time change */
 	clock_was_set();
 
+#ifdef CONFIG_MTK_CCCI_DEVICES
+	notify_time_update();
+#endif
 	return 0;
 }
 EXPORT_SYMBOL(do_settimeofday);

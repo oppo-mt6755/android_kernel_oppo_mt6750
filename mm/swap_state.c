@@ -62,6 +62,10 @@ unsigned long total_swapcache_pages(void)
 		ret += swapper_spaces[i].nrpages;
 	return ret;
 }
+#ifdef VENDOR_EDIT
+//fangpan@Swdp.shanghai, 2015/11/26, add interface for resmon module
+EXPORT_SYMBOL(total_swapcache_pages);
+#endif
 
 void show_swap_cache_info(void)
 {
@@ -168,7 +172,11 @@ int add_to_swap(struct page *page, struct list_head *list)
 	VM_BUG_ON(!PageLocked(page));
 	VM_BUG_ON(!PageUptodate(page));
 
+#ifndef CONFIG_MEMCG_ZNDSWAP
 	entry = get_swap_page();
+#else
+	entry = get_swap_page_by_memcg(page);
+#endif
 	if (!entry.val)
 		return 0;
 

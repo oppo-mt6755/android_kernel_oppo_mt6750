@@ -373,13 +373,81 @@ KBUILD_CFLAGS   := -Wall -Wundef -Wstrict-prototypes -Wno-trigraphs \
 		   -fno-strict-aliasing -fno-common \
 		   -Werror-implicit-function-declaration \
 		   -Wno-format-security \
-		   -fno-delete-null-pointer-checks
+		   -fno-delete-null-pointer-checks \
+		   -Werror=format -Werror=int-to-pointer-cast -Werror=pointer-to-int-cast
+
 KBUILD_AFLAGS_KERNEL :=
 KBUILD_CFLAGS_KERNEL :=
 KBUILD_AFLAGS   := -D__ASSEMBLY__
 KBUILD_AFLAGS_MODULE  := -DMODULE
 KBUILD_CFLAGS_MODULE  := -DMODULE
 KBUILD_LDFLAGS_MODULE := -T $(srctree)/scripts/module-common.lds
+
+#ifdef  VENDOR_EDIT
+#boning.li@swdp.android.config,2015.2.28 add for enviroment build
+KBUILD_CFLAGS +=   -DVENDOR_EDIT
+KBUILD_CPPFLAGS += -DVENDOR_EDIT
+CFLAGS_KERNEL +=   -DVENDOR_EDIT
+CFLAGS_MODULE +=   -DVENDOR_EDIT
+#endif
+#ifdef  VENDOR_EDIT
+#shirendong@bsp.config,2015.2.28 add for enviroment build
+ifeq ($(NET_BUILD_TYPE),cmcctest)
+KBUILD_CFLAGS +=   -DOPPO_CMCC_TEST
+KBUILD_CPPFLAGS += -DOPPO_CMCC_TEST
+CFLAGS_KERNEL +=   -DOPPO_CMCC_TEST
+CFLAGS_MODULE +=   -DOPPO_CMCC_TEST
+endif
+
+ifeq ($(NET_BUILD_TYPE),cmcc)
+KBUILD_CFLAGS +=   -DOPPO_CMCC_MP
+KBUILD_CPPFLAGS +=   -DOPPO_CMCC_MP
+CFLAGS_KERNEL +=     -DOPPO_CMCC_MP
+CFLAGS_MODULE +=    -DOPPO_CMCC_MP
+endif
+
+#liping-m@swdp.lcdDriver,2015/11/26 add for CTA FLAG
+ifeq ($(OPPO_BUILD_TYPE),cta)
+KBUILD_CFLAGS += -DOPPO_CTA_FLAG
+KBUILD_CPPFLAGS += -DOPPO_CTA_FLAG
+endif
+#guoling@MultiMedia, 2016/06/02, add for 11bits brightness dimming.
+ifeq ($(OPPO_ELEVENBITS_DIMMING_SUPPORT),yes)
+KBUILD_CFLAGS += -DOPPO_ELEVENBITS_DIMMING_SUPPORT
+KBUILD_CPPFLAGS += -DOPPO_ELEVENBITS_DIMMING_SUPPORT
+endif
+#endif
+
+#liping-m@swdp.lcdDriver,2016/03/18 add for CT FLAG
+ifneq ($(filter allnetcttest allnetctfield cmcctest,$(NET_BUILD_TYPE)),)
+KBUILD_CFLAGS += -DOPPO_CTTEST_FLAG
+KBUILD_CPPFLAGS += -DOPPO_CTTEST_FLAG
+endif
+
+#fanhui@PhoneSW.BSP, 2016-05-18, add for DeathHealer only used in release
+ifneq ($(filter release cts cta,$(OPPO_BUILD_TYPE)),)
+KBUILD_CFLAGS += -DOPPO_RELEASE_FLAG
+KBUILD_CPPFLAGS += -DOPPO_RELEASE_FLAG
+endif
+ifneq ($(filter cmcctest cmccfield allnetcttest,$(NET_BUILD_TYPE)),)
+KBUILD_CFLAGS += -DOPPO_RELEASE_FLAG
+KBUILD_CPPFLAGS += -DOPPO_RELEASE_FLAG
+endif
+#endif
+
+
+
+#ifdef  VENDOR_EDIT
+#Haiping.Zhong@Swdp.Android.BuildConfig, 2016/03/25, Add for Project info define
+ifneq (,$(filter full_oppo6750%,$(TARGET_PRODUCT)))
+KBUILD_CFLAGS += -DOPPO_6750_PROJECT
+KBUILD_CPPFLAGS += -DOPPO_6750_PROJECT
+CFLAGS_KERNEL += -DOPPO_6750_PROJECT
+CFLAGS_MODULE += -DOPPO_6750_PROJECT
+endif
+#endif
+
+
 
 # Read KERNELRELEASE from include/config/kernel.release (if it exists)
 KERNELRELEASE = $(shell cat include/config/kernel.release 2> /dev/null)

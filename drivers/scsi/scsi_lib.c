@@ -1242,6 +1242,8 @@ int scsi_prep_state_check(struct scsi_device *sdev, struct request *req)
 				    "rejecting I/O to dead device\n");
 			ret = BLKPREP_KILL;
 			break;
+#ifndef VENDOR_EDIT 
+// wenxian.zhen@Phone.Bsp.Driver, 2016/01/26  modified for Defer processing of REQ_PREEMPT requests for blocked devices	
 		case SDEV_QUIESCE:
 		case SDEV_BLOCK:
 		case SDEV_CREATED_BLOCK:
@@ -1251,6 +1253,21 @@ int scsi_prep_state_check(struct scsi_device *sdev, struct request *req)
 			if (!(req->cmd_flags & REQ_PREEMPT))
 				ret = BLKPREP_DEFER;
 			break;
+#else
+		case SDEV_BLOCK:
+		case SDEV_CREATED_BLOCK:
+				ret = BLKPREP_DEFER;
+			break;
+		case SDEV_QUIESCE:			
+			/*
+			 * If the devices is blocked we defer normal commands.
+			 */
+			if (!(req->cmd_flags & REQ_PREEMPT))
+				ret = BLKPREP_DEFER;
+			break;
+#endif /*CONFIG_VENDOR_EDIT*/		
+			
+
 		default:
 			/*
 			 * For any other not fully online state we only allow

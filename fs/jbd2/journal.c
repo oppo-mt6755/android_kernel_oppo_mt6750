@@ -1221,7 +1221,11 @@ journal_t * jbd2_journal_init_inode (struct inode *inode)
 		goto out_err;
 	}
 
+#if defined(CONFIG_CMA) && defined(CONFIG_MTK_SVP)
+	bh = getblk_unmovable(journal->j_dev, blocknr, journal->j_blocksize);
+#else
 	bh = __getblk(journal->j_dev, blocknr, journal->j_blocksize);
+#endif
 	if (!bh) {
 		printk(KERN_ERR
 		       "%s: Cannot get buffer for journal superblock\n",
@@ -2025,8 +2029,18 @@ static void __journal_abort_soft (journal_t *journal, int errno)
 
 	__jbd2_journal_abort_hard(journal);
 
+#ifndef VENDOR_EDIT
+//Wenxian.Zhen@Prd.BaseDrv, 2016/05/25, modify for linux patch :ext4, jbd2: ensure entering into panic after recording an error in superblock	
 	if (errno)
 		jbd2_journal_update_sb_errno(journal);
+#else/* VENDOR_EDIT */
+	if (errno) {
+		jbd2_journal_update_sb_errno(journal);
+		write_lock(&journal->j_state_lock);
+		journal->j_flags |= JBD2_REC_ERR;
+		write_unlock(&journal->j_state_lock);
+		}
+#endif /* VENDOR_EDIT */
 }
 
 /**

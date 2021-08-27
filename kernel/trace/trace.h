@@ -12,6 +12,9 @@
 #include <linux/hw_breakpoint.h>
 #include <linux/trace_seq.h>
 #include <linux/ftrace_event.h>
+#ifdef CONFIG_MT65XX_TRACER
+#include <mach/mt_mon.h>
+#endif
 
 #ifdef CONFIG_FTRACE_SYSCALLS
 #include <asm/unistd.h>		/* For NR_SYSCALLS	     */
@@ -35,6 +38,7 @@ enum trace_type {
 	TRACE_USER_STACK,
 	TRACE_BLK,
 	TRACE_BPUTS,
+	TRACE_MT65XX_MON_TYPE,
 
 	__TRACE_LAST_TYPE,
 };
@@ -288,6 +292,8 @@ extern void __ftrace_bad_type(void);
 			  TRACE_GRAPH_ENT);		\
 		IF_ASSIGN(var, ent, struct ftrace_graph_ret_entry,	\
 			  TRACE_GRAPH_RET);		\
+		IF_ASSIGN(var, ent, struct mt65xx_mon_entry, \
+			  TRACE_MT65XX_MON_TYPE); \
 		__ftrace_bad_type();					\
 	} while (0)
 
@@ -597,6 +603,21 @@ void tracing_stop_sched_switch_record(void);
 void tracing_start_sched_switch_record(void);
 int register_tracer(struct tracer *type);
 int is_tracing_stopped(void);
+#ifdef VENDOR_EDIT
+//fangpan@Swdp.shanghai, 2016/06/30, export the ftrace interface
+/* add more interface for kernel ftrace collect function*/
+extern int trace_array_get(struct trace_array *this_tr);
+extern void trace_array_put(struct trace_array *this_tr);
+extern void tracer_tracing_on(struct trace_array *tr);
+extern void tracer_tracing_off(struct trace_array *tr);
+extern int trace_set_options(struct trace_array *tr, char *option);
+extern int get_system_default_ftrace(struct trace_array ** tr_ret);
+extern ssize_t tracing_resize_ring_buffer(struct trace_array *tr, unsigned long size, int cpu_id);
+extern int tracing_clock_update(struct trace_array *tr, const char *buf);
+extern int new_instance_create(const char *name);
+extern int instance_delete(const char *name);
+extern int ftrace_set_clr_event(struct trace_array *tr, char *buf, int set);
+#endif
 
 extern cpumask_var_t __read_mostly tracing_buffer_mask;
 
@@ -653,6 +674,7 @@ static inline void __trace_stack(struct trace_array *tr, unsigned long flags,
 extern cycle_t ftrace_now(int cpu);
 
 extern void trace_find_cmdline(int pid, char comm[]);
+extern int trace_find_tgid(int pid);
 
 #ifdef CONFIG_DYNAMIC_FTRACE
 extern unsigned long ftrace_update_tot_cnt;
@@ -866,6 +888,7 @@ enum trace_iterator_flags {
 	TRACE_ITER_IRQ_INFO		= 0x800000,
 	TRACE_ITER_MARKERS		= 0x1000000,
 	TRACE_ITER_FUNCTION		= 0x2000000,
+	TRACE_ITER_TGID 		= 0x4000000,
 };
 
 /*
@@ -1031,6 +1054,9 @@ extern struct list_head ftrace_events;
 
 extern const char *__start___trace_bprintk_fmt[];
 extern const char *__stop___trace_bprintk_fmt[];
+
+extern const char *__start___tracepoint_str[];
+extern const char *__stop___tracepoint_str[];
 
 void trace_printk_init_buffers(void);
 void trace_printk_start_comm(void);

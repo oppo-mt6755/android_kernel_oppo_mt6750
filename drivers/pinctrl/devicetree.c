@@ -91,8 +91,13 @@ static int dt_remember_or_free_map(struct pinctrl *p, const char *statename,
 	dt_map->map = map;
 	dt_map->num_maps = num_maps;
 	list_add_tail(&dt_map->node, &p->dt_maps);
-
+	
+#ifndef VENDOR_EDIT 
+// wenxian.zhen@Phone.Bsp.Driver, 2016/03/30  modified for force add lock, avoid  die during boot	
 	return pinctrl_register_map(map, num_maps, false, true);
+#else
+	return pinctrl_register_map(map, num_maps, false);
+#endif
 }
 
 struct pinctrl_dev *of_pinctrl_get(struct device_node *np)
@@ -186,7 +191,9 @@ int pinctrl_dt_to_map(struct pinctrl *p)
 
 	/* CONFIG_OF enabled, p->dev not instantiated from DT */
 	if (!np) {
-		dev_dbg(p->dev, "no of_node; not parsing pinctrl DT\n");
+		if (of_have_populated_dt())
+			dev_dbg(p->dev,
+				"no of_node; not parsing pinctrl DT\n");
 		return 0;
 	}
 

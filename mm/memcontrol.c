@@ -541,6 +541,21 @@ static inline bool mem_cgroup_is_root(struct mem_cgroup *memcg)
 	return (memcg == root_mem_cgroup);
 }
 
+#ifdef CONFIG_MEMCG_ZNDSWAP
+/* add_to_swap -> get_swap_page_by_memcg -> .. */
+bool memcg_is_root(struct page *page)
+{
+	struct page_cgroup *pc;
+
+	if (mem_cgroup_disabled())
+		return true;
+
+	pc = lookup_page_cgroup(page);
+
+	return mem_cgroup_is_root(pc->mem_cgroup);
+}
+#endif
+
 /* Writing them here to avoid exposing memcg's inner layout */
 #if defined(CONFIG_INET) && defined(CONFIG_MEMCG_KMEM)
 
@@ -1489,17 +1504,21 @@ int mem_cgroup_inactive_anon_is_low(struct lruvec *lruvec)
 	unsigned long inactive_ratio;
 	unsigned long inactive;
 	unsigned long active;
+#ifndef VENDOR_EDIT
+/*Huacai.Zhou@PSW.BSP.Performance, 2018-10-13, fix anon inactive/active ratio*/
 	unsigned long gb;
-
+#endif /*VENDOR_EDIT*/
 	inactive = mem_cgroup_get_lru_size(lruvec, LRU_INACTIVE_ANON);
 	active = mem_cgroup_get_lru_size(lruvec, LRU_ACTIVE_ANON);
-
+#ifndef VENDOR_EDIT
+/*Huacai.Zhou@PSW.BSP.Performance, 2018-10-13, fix anon inactive/active ratio*/
 	gb = (inactive + active) >> (30 - PAGE_SHIFT);
 	if (gb)
 		inactive_ratio = int_sqrt(10 * gb);
 	else
-		inactive_ratio = 1;
+#endif /*VENDOR_EDIT*/
 
+		inactive_ratio = 1;
 	return inactive * inactive_ratio < active;
 }
 
@@ -6795,6 +6814,12 @@ static int mem_cgroup_can_attach(struct cgroup *cgroup,
 	return ret;
 }
 
+static int mem_cgroup_allow_attach(struct cgroup *cgroup,
+				   struct cgroup_taskset *tset)
+{
+	return subsys_cgroup_allow_attach(cgroup, tset);
+}
+
 static void mem_cgroup_cancel_attach(struct cgroup *cgroup,
 				     struct cgroup_taskset *tset)
 {
@@ -6963,6 +6988,11 @@ static int mem_cgroup_can_attach(struct cgroup *cgroup,
 {
 	return 0;
 }
+static int mem_cgroup_allow_attach(struct cgroup *cgroup,
+				   struct cgroup_taskset *tset)
+{
+	return 0;
+}
 static void mem_cgroup_cancel_attach(struct cgroup *cgroup,
 				     struct cgroup_taskset *tset)
 {
@@ -6998,8 +7028,10 @@ struct cgroup_subsys mem_cgroup_subsys = {
 	.can_attach = mem_cgroup_can_attach,
 	.cancel_attach = mem_cgroup_cancel_attach,
 	.attach = mem_cgroup_move_task,
+	.allow_attach = mem_cgroup_allow_attach,
 	.bind = mem_cgroup_bind,
 	.base_cftypes = mem_cgroup_files,
+	.disabled = 1,	/* Disable it for performance workaround */
 	.early_init = 0,
 	.use_id = 1,
 };
@@ -7049,6 +7081,12 @@ static int __init mem_cgroup_init(void)
 	enable_swap_cgroup();
 	mem_cgroup_soft_limit_tree_init();
 	memcg_stock_init();
+#ifdef CONFIG_MEMCG_ZNDSWAP
+	dt_swapcache = 2560;
+	dt_writeback = 1024;
+	dt_filecache = totalram_pages;
+	/*dt_free = ;*/
+#endif
 	return 0;
 }
 subsys_initcall(mem_cgroup_init);

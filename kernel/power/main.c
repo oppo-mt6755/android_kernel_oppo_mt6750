@@ -15,38 +15,99 @@
 #include <linux/workqueue.h>
 #include <linux/debugfs.h>
 #include <linux/seq_file.h>
+#ifdef VENDOR_EDIT
+//Yanzhen.Feng@Swdp.Android.OppoFeature.OppoDebug, 2015/08/14, Add for Sync App and Kernel time
+#include <linux/rtc.h>
+#endif /* VENDOR_EDIT */
 
 #include "power.h"
 
+#define HIB_PM_DEBUG 1
+#define _TAG_HIB_M "HIB/PM"
+#if (HIB_PM_DEBUG)
+#undef hib_log
+#define hib_log(fmt, ...)  pr_warn("[%s][%s]" fmt, _TAG_HIB_M, __func__, ##__VA_ARGS__);
+#else
+#define hib_log(fmt, ...)
+#endif
+#undef hib_warn
+#define hib_warn(fmt, ...) pr_warn("[%s][%s]" fmt, _TAG_HIB_M, __func__, ##__VA_ARGS__);
+
+#ifdef VENDOR_EDIT
+//rendong.shi@Basic.boot, 2015/04/27, Modify  for add interface reboot reason 
+static char *boot_mode;
+extern u16  is_kernel_panic_reboot();
+extern void  hal_rtc_clear_spar0_bit8();
+static int first_in = 0;
+#endif
+
+#ifdef CONFIG_HAS_EARLYSUSPEND
 DEFINE_MUTEX(pm_mutex);
+EXPORT_SYMBOL_GPL(pm_mutex);
+#else
+DEFINE_MUTEX(pm_mutex);
+#endif
 
 #ifdef CONFIG_PM_SLEEP
 
 /* Routines for PM-transition notifications */
 
+#ifdef CONFIG_HAS_EARLYSUSPEND
+BLOCKING_NOTIFIER_HEAD(pm_chain_head);
+EXPORT_SYMBOL_GPL(pm_chain_head);
+//<20130327> <marc.huang> add pm_notifier_count
+static unsigned int pm_notifier_count = 0;
+#else
 static BLOCKING_NOTIFIER_HEAD(pm_chain_head);
+#endif
 
 int register_pm_notifier(struct notifier_block *nb)
 {
+#ifdef CONFIG_HAS_EARLYSUSPEND
+	//<20130327> <marc.huang> add pm_notifier_count
+	++pm_notifier_count;
+#endif
 	return blocking_notifier_chain_register(&pm_chain_head, nb);
 }
 EXPORT_SYMBOL_GPL(register_pm_notifier);
 
 int unregister_pm_notifier(struct notifier_block *nb)
 {
+#ifdef CONFIG_HAS_EARLYSUSPEND
+	//<20130327> <marc.huang> add pm_notifier_count
+	--pm_notifier_count;
+#endif
 	return blocking_notifier_chain_unregister(&pm_chain_head, nb);
 }
 EXPORT_SYMBOL_GPL(unregister_pm_notifier);
 
 int pm_notifier_call_chain(unsigned long val)
 {
+#ifdef CONFIG_HAS_EARLYSUSPEND
+	//<20130327> <marc.huang> add pm_notifier_count
+	int ret;
+	pr_debug("[%s] pm_notifier_count: %u, event = %lu\n", __func__, pm_notifier_count, val);
+
+	ret = blocking_notifier_call_chain(&pm_chain_head, val, NULL);
+
+	return notifier_to_errno(ret);
+#else
 	int ret = blocking_notifier_call_chain(&pm_chain_head, val, NULL);
 
 	return notifier_to_errno(ret);
+#endif
 }
+#ifdef CONFIG_HAS_EARLYSUSPEND
+EXPORT_SYMBOL_GPL(pm_notifier_call_chain);
+#endif
 
 /* If set, devices may be suspended and resumed asynchronously. */
+#ifdef CONFIG_HAS_EARLYSUSPEND
+//<20130327> <marc.huang> disable async suspend/resume, set pm_async_enabled = 0
+int pm_async_enabled = 0;
+#else
 int pm_async_enabled = 1;
+#endif
 
 static ssize_t pm_async_show(struct kobject *kobj, struct kobj_attribute *attr,
 			     char *buf)
@@ -215,17 +276,72 @@ static int suspend_stats_open(struct inode *inode, struct file *file)
 {
 	return single_open(file, suspend_stats_show, NULL);
 }
+#ifdef VENDOR_EDIT
+//Yanzhen.Feng@Swdp.Android.OppoFeature.OppoDebug, 2015/08/14, Add for Sync App and Kernel time
+static ssize_t watchdog_write(struct file *file, const char __user *buf, size_t count, loff_t *ppos)
+{
+	s32 value;
+	struct timespec ts;
+	struct rtc_time tm;
+
+	if (count == sizeof(s32)) {
+		if (copy_from_user(&value, buf, sizeof(s32)))
+			return -EFAULT;
+	} else if (count <= 11) { /* ASCII perhaps? */
+		char ascii_value[11];
+		unsigned long int ulval;
+		int ret;
+
+		if (copy_from_user(ascii_value, buf, count))
+			return -EFAULT;
+
+		if (count > 10) {
+			if (ascii_value[10] == '\n')
+				ascii_value[10] = '\0';
+			else
+				return -EINVAL;
+		} else {
+			ascii_value[count] = '\0';
+		}
+		ret = kstrtoul(ascii_value, 16, &ulval);
+		if (ret) {
+			pr_debug("%s, 0x%lx, 0x%x\n", ascii_value, ulval, ret);
+			return -EINVAL;
+		}
+		value = (s32)lower_32_bits(ulval);
+	} else {
+		return -EINVAL;
+	}
+
+	getnstimeofday(&ts);
+	rtc_time_to_tm(ts.tv_sec, &tm);
+	pr_warn("!@WatchDog_%d; %d-%02d-%02d %02d:%02d:%02d.%09lu UTC\n",
+		value, tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday,
+		tm.tm_hour, tm.tm_min, tm.tm_sec, ts.tv_nsec);
+
+	return count;
+}
+#endif /* VENDOR_EDIT */
 
 static const struct file_operations suspend_stats_operations = {
 	.open           = suspend_stats_open,
 	.read           = seq_read,
 	.llseek         = seq_lseek,
 	.release        = single_release,
+#ifdef VENDOR_EDIT
+//Yanzhen.Feng@Swdp.Android.OppoFeature.OppoDebug, 2015/08/14, Add for Sync App and Kernel time
+	.write          = watchdog_write,
+#endif /* VENDOR_EDIT */
 };
 
 static int __init pm_debugfs_init(void)
 {
+#ifndef VENDOR_EDIT
+//Yanzhen.Feng@Swdp.Android.OppoFeature.OppoDebug, 2015/08/14, Modify for Sync App and Kernel time
 	debugfs_create_file("suspend_stats", S_IFREG | S_IRUGO,
+#else /* VENDOR_EDIT */
+	debugfs_create_file("suspend_stats", S_IFREG | S_IRUGO | S_IWUGO,
+#endif /* VENDOR_EDIT */
 			NULL, NULL, &suspend_stats_operations);
 	return 0;
 }
@@ -277,6 +393,9 @@ static inline void pm_print_times_init(void) {}
 #endif /* CONFIG_PM_SLEEP_DEBUG */
 
 struct kobject *power_kobj;
+#ifdef CONFIG_HAS_EARLYSUSPEND
+EXPORT_SYMBOL_GPL(power_kobj);
+#endif
 
 /**
  *	state - control system power state.
@@ -293,12 +412,20 @@ static ssize_t state_show(struct kobject *kobj, struct kobj_attribute *attr,
 {
 	char *s = buf;
 #ifdef CONFIG_SUSPEND
+#ifdef CONFIG_HAS_EARLYSUSPEND
 	suspend_state_t i;
 
 	for (i = PM_SUSPEND_MIN; i < PM_SUSPEND_MAX; i++)
 		if (pm_states[i].state)
 			s += sprintf(s,"%s ", pm_states[i].label);
+#else
+	int i;
 
+	for (i = 0; i < PM_SUSPEND_MAX; i++) {
+		if (pm_states[i] && valid_state(i))
+			s += sprintf(s,"%s ", pm_states[i]);
+	}
+#endif /* CONFIG_HAS_EARLYSUSPEND */
 #endif
 #ifdef CONFIG_HIBERNATION
 	s += sprintf(s, "%s\n", "disk");
@@ -314,7 +441,11 @@ static suspend_state_t decode_state(const char *buf, size_t n)
 {
 #ifdef CONFIG_SUSPEND
 	suspend_state_t state = PM_SUSPEND_MIN;
+#ifdef CONFIG_HAS_EARLYSUSPEND
 	struct pm_sleep_state *s;
+#else
+	const char * const *s;
+#endif /* CONFIG_HAS_EARLYSUSPEND */
 #endif
 	char *p;
 	int len;
@@ -327,20 +458,110 @@ static suspend_state_t decode_state(const char *buf, size_t n)
 		return PM_SUSPEND_MAX;
 
 #ifdef CONFIG_SUSPEND
+#ifdef CONFIG_HAS_EARLYSUSPEND
 	for (s = &pm_states[state]; state < PM_SUSPEND_MAX; s++, state++)
-		if (s->state && len == strlen(s->label)
+		if (len == strlen(s->label)
 		    && !strncmp(buf, s->label, len))
 			return s->state;
+#else
+	for (s = &pm_states[state]; state < PM_SUSPEND_MAX; s++, state++)
+		if (*s && len == strlen(*s) && !strncmp(buf, *s, len))
+			return state;
+#endif /* CONFIG_HAS_EARLYSUSPEND */
 #endif
 
 	return PM_SUSPEND_ON;
 }
 
+
+#ifdef CONFIG_HAS_EARLYSUSPEND
+static ssize_t state_store(struct kobject *kobj, struct kobj_attribute *attr,
+			   const char *buf, size_t n)
+{
+#ifdef CONFIG_SUSPEND
+#ifdef CONFIG_EARLYSUSPEND
+    suspend_state_t state = PM_SUSPEND_ON;
+#else
+    suspend_state_t state = PM_SUSPEND_STANDBY;
+#endif
+    struct pm_sleep_state *s;
+#endif
+    char *p;
+    int len;
+    int error = -EINVAL;
+
+    p = memchr(buf, '\n', n);
+    len = p ? p - buf : n;
+
+#ifdef CONFIG_MTK_HIBERNATION
+    state = decode_state(buf, n);
+    hib_log("entry (%d)\n", state);
+#endif
+
+#ifdef CONFIG_MTK_HIBERNATION
+    if (len == 8 && !strncmp(buf, "hibabort", len)) {
+        hib_log("abort hibernation...\n");
+        error = mtk_hibernate_abort();
+        goto Exit;
+    }
+#endif
+
+    /* First, check if we are requested to hibernate */
+    if (len == 4 && !strncmp(buf, "disk", len)) {
+#ifdef CONFIG_MTK_HIBERNATION
+        hib_log("trigger hibernation...\n");
+#ifdef CONFIG_EARLYSUSPEND
+        if (PM_SUSPEND_ON == get_suspend_state()) {
+            hib_warn("\"on\" to \"disk\" (i.e., 0->4) is not supported !!!\n");
+            error = -EINVAL;
+            goto Exit;
+        }
+#endif
+        if (!pre_hibernate()) {
+            error = 0;
+            error = mtk_hibernate();
+        }
+#else // !CONFIG_MTK_HIBERNATION
+        error = hibernate();
+#endif
+        goto Exit;
+    }
+
+#ifdef CONFIG_SUSPEND
+    for (s = &pm_states[state]; state < PM_SUSPEND_MAX; s++, state++) {
+        if (len == strlen(s->label)
+            && !strncmp(buf, s->label, len)) {
+            break;
+        }
+    }
+
+    if (state < PM_SUSPEND_MAX) {
+#ifdef CONFIG_EARLYSUSPEND
+        if (state == PM_SUSPEND_ON || pm_states[state].state) {
+            error = 0;
+            request_suspend_state(state);
+        } else
+            error = -EINVAL;
+#else
+        error = enter_state(state);
+#endif
+    }
+#endif
+
+ Exit:
+    return error ? error : n;
+}
+#else /* !CONFIG_HAS_EARLYSUSPEND */
 static ssize_t state_store(struct kobject *kobj, struct kobj_attribute *attr,
 			   const char *buf, size_t n)
 {
 	suspend_state_t state;
 	int error;
+
+#ifdef CONFIG_MTK_HIBERNATION
+    char *p;
+    int len;
+#endif
 
 	error = pm_autosleep_lock();
 	if (error)
@@ -352,17 +573,41 @@ static ssize_t state_store(struct kobject *kobj, struct kobj_attribute *attr,
 	}
 
 	state = decode_state(buf, n);
-	if (state < PM_SUSPEND_MAX)
+
+#ifdef CONFIG_MTK_HIBERNATION
+    p = memchr(buf, '\n', n);
+    len = p ? p - buf : n;
+    if (len == 8 && !strncmp(buf, "hibabort", len)) {
+        hib_log("abort hibernation...\n");
+        error = mtk_hibernate_abort();
+        goto out;
+    }
+#endif
+
+	pr_warn("[%s]: state = (%d)\n", __func__, state);
+
+	if (state < PM_SUSPEND_MAX) {
 		error = pm_suspend(state);
-	else if (state == PM_SUSPEND_MAX)
+		pr_warn("[%s]: pm_suspend() return (%d)\n", __func__, error);
+	} else if (state == PM_SUSPEND_MAX) {
+#ifdef CONFIG_MTK_HIBERNATION
+        hib_log("trigger hibernation...\n");
+        if (!pre_hibernate()) {
+            error = 0;
+            error = mtk_hibernate();
+        }
+#else /* !CONFIG_MTK_HIBERNATION */
 		error = hibernate();
-	else
+#endif /* CONFIG_MTK_HIBERNATION */
+	} else {
 		error = -EINVAL;
+	}
 
  out:
 	pm_autosleep_unlock();
 	return error ? error : n;
 }
+#endif
 
 power_attr(state);
 
@@ -445,9 +690,15 @@ static ssize_t autosleep_show(struct kobject *kobj,
 		return sprintf(buf, "off\n");
 
 #ifdef CONFIG_SUSPEND
+#ifdef CONFIG_HAS_EARLYSUSPEND
 	if (state < PM_SUSPEND_MAX)
 		return sprintf(buf, "%s\n", pm_states[state].state ?
-					pm_states[state].label : "error");
+						pm_states[state].label : "error");
+#else
+	if (state < PM_SUSPEND_MAX)
+		return sprintf(buf, "%s\n", valid_state(state) ?
+						pm_states[state] : "error");
+#endif /* CONFIG_HAS_EARLYSUSPEND */
 #endif
 #ifdef CONFIG_HIBERNATION
 	return sprintf(buf, "disk\n");
@@ -463,6 +714,9 @@ static ssize_t autosleep_store(struct kobject *kobj,
 	suspend_state_t state = decode_state(buf, n);
 	int error;
 
+#ifdef CONFIG_HAS_EARLYSUSPEND
+    hib_log("store autosleep_state(%d)\n", state);
+#endif
 	if (state == PM_SUSPEND_ON
 	    && strcmp(buf, "off") && strcmp(buf, "off\n"))
 		return -EINVAL;
@@ -578,6 +832,36 @@ power_attr(pm_freeze_timeout);
 
 #endif	/* CONFIG_FREEZER*/
 
+#ifdef VENDOR_EDIT
+//rendong.shi@Basic.boot, 2015/04/27, Modify  for add interface reboot reason 
+static ssize_t app_boot_show(struct kobject *kobj, struct kobj_attribute *attr,
+       char *buf)
+{
+
+	if(first_in == 0)
+	{
+    
+	    if(is_kernel_panic_reboot())
+		{
+		    boot_mode = "kernel";
+			hal_rtc_clear_spar0_bit8();	
+		}
+	    else
+	    {
+	        boot_mode = "normal";
+	    }
+		first_in = 1;
+    }
+    return sprintf(buf, "%s", boot_mode);
+}
+
+static ssize_t app_boot_store(struct kobject *kobj, struct kobj_attribute *attr,
+        const char *buf, size_t n)
+{
+    return 0;
+}
+power_attr(app_boot);
+#endif /* VENDOR_EDIT */
 static struct attribute * g[] = {
 	&state_attr.attr,
 #ifdef CONFIG_PM_TRACE
@@ -604,6 +888,10 @@ static struct attribute * g[] = {
 #ifdef CONFIG_FREEZER
 	&pm_freeze_timeout_attr.attr,
 #endif
+#ifdef VENDOR_EDIT
+//rendong.shi@Basic.boot, 2015/04/27, Modify  for add interface reboot reason 
+   &app_boot_attr.attr,
+#endif /* VENDOR_EDIT */
 	NULL,
 };
 

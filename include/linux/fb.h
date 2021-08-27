@@ -19,8 +19,18 @@ struct vm_area_struct;
 struct fb_info;
 struct device;
 struct file;
+struct dma_buf;
 struct videomode;
 struct device_node;
+
+#ifdef VENDOR_EDIT
+/*yan.chen@Swdp.shanghai, 2015/11/26, remove replicated macro definition */
+#ifndef CONFIG_DMA_SHARED_BUFFER
+#define CONFIG_DMA_SHARED_BUFFER
+#endif
+#else
+#define CONFIG_DMA_SHARED_BUFFER
+#endif
 
 /* Definitions below are used in the parsed monitor specs */
 #define FB_DPMS_ACTIVE_OFF	1
@@ -304,6 +314,11 @@ struct fb_ops {
 	/* called at KDB enter and leave time to prepare the console */
 	int (*fb_debug_enter)(struct fb_info *info);
 	int (*fb_debug_leave)(struct fb_info *info);
+
+#ifdef CONFIG_DMA_SHARED_BUFFER                                                      
+       /* Export the frame buffer as a dmabuf object */                              
+       struct dma_buf *(*fb_dmabuf_export)(struct fb_info *info);                    
+#endif         	
 };
 
 #ifdef CONFIG_FB_TILEBLITTING
@@ -632,6 +647,13 @@ extern int num_registered_fb;
 extern struct class *fb_class;
 
 extern int lock_fb_info(struct fb_info *info);
+
+#ifdef VENDOR_EDIT
+//xiaocheng.li@swdp.shanghai, 2016-1-18, export kernel symbol
+extern struct fb_info *get_fb_info(unsigned int idx);
+extern unsigned int get_frame_cnt(void);
+extern unsigned int get_display_state(void);
+#endif
 
 static inline void unlock_fb_info(struct fb_info *info)
 {

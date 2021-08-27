@@ -363,7 +363,12 @@ static int ext4_valid_extent(struct inode *inode, struct ext4_extent *ext)
 	ext4_lblk_t lblock = le32_to_cpu(ext->ee_block);
 	ext4_lblk_t last = lblock + len - 1;
 
+#ifndef VENDOR_EDIT
+//Zhilong.zhang@Phone.Bsp.Driver, 2016/03/30, added kernel patch: check for zero length extent explicitly
 	if (lblock > last)
+#else
+	if (len == 0 || lblock > last)
+#endif /*VENDOR_EDIT*/		
 		return 0;
 	return ext4_data_block_valid(EXT4_SB(inode->i_sb), block, len);
 }
