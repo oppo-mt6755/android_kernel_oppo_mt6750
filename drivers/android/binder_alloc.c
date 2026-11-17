@@ -525,7 +525,7 @@ static void binder_delete_free_buffer(struct binder_alloc *alloc,
 		}
 	}
 
-	if (PAGE_ALIGNED(buffer->data)) {
+	if (IS_ALIGNED((unsigned long)buffer->data, PAGE_SIZE)) {
 		binder_alloc_debug(BINDER_DEBUG_BUFFER_ALLOC,
 				   "%d: merge free, buffer start %pK is page aligned\n",
 				   alloc->pid, buffer->data);
