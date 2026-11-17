@@ -20,6 +20,7 @@
 #include <asm/cacheflush.h>
 #include <linux/list.h>
 #include <linux/mm.h>
+#include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/rtmutex.h>
 #include <linux/rbtree.h>
