@@ -2921,7 +2921,7 @@ CONFIG_FUSE_FS=y
 #ifdef VENDOR_EDIT //Jingchun.Wang@Phone.Bsp.Driver, 2016/04/13  Add for sdcardfs 
 CONFIG_SDCARD_FS=y                                                              
 CONFIG_SDCARD_FS_CI_SEARCH=y                                                    
-CONFIG_SDCARD_FS_XATTR=y  s
+CONFIG_SDCARD_FS_XATTR=y
 # CONFIG_CUSE is not set
 
 #
