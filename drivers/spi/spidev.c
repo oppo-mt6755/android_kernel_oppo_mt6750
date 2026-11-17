@@ -243,15 +243,10 @@ static int spidev_message(struct spidev_data *spidev,
 		k_tmp->len = u_tmp->len;
 
 		total += k_tmp->len;
-#ifndef VENDOR_EDIT 
-// wenxian.zhen@Phone.Bsp.Driver, 2016/02/29  modified spi: spidev: fix possible arithmetic overflow for multi-transfer message
-		if (total > bufsiz) {
-#else
-/* Check total length of transfers.  Also check each+		 
-* transfer length to avoid arithmetic overflow.
-*/
-		if (total > bufsiz || k_tmp->len > bufsiz) { 
-#endif /*CONFIG_VENDOR_EDIT*/
+		/* Check total length of transfers.  Also check each
+		 * transfer length to avoid arithmetic overflow.
+		 */
+		if (total > bufsiz || k_tmp->len > bufsiz) {
 			status = -EMSGSIZE;
 			goto done;
 		}

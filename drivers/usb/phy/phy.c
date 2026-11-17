@@ -81,7 +81,9 @@ static void devm_usb_phy_release(struct device *dev, void *res)
 // wenxian.zhen@Phone.Bsp.Driver, 2016/02/29  modified  usb: phy: Find the right match in devm_usb_phy_match
 static int devm_usb_phy_match(struct device *dev, void *res, void *match_data)
 {
-	return res == match_data;
+	struct usb_phy **phy = res;
+
+	return *phy == match_data;
 }
 #else
 static int devm_usb_phy_match(struct device *dev, void *res, void *match_data)

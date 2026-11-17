@@ -891,21 +891,20 @@ static unsigned long shrink_page_list(struct list_head *page_list,
 		 *    reclaim. Wait for the writeback to complete.
 		 */
 		if (PageWriteback(page)) {
-			/* Case 1 above */
-			if (current_is_kswapd() &&
-			    PageReclaim(page) &&
-			    zone_is_reclaim_writeback(zone)) {
-				nr_immediate++;
-				goto keep_locked;
-
-			/* Case 2 above */
-			} else if (global_reclaim(sc) ||
-#ifndef VENDOR_EDIT
-// Jingchun.Wang@Phone.Bsp.Driver, 2016/04/29  Modify for Do not wait for page writeback for GFP_NOFS allocations
-			    !PageReclaim(page) || !(sc->gfp_mask & __GFP_IO)) {
-#else /*VENDOR_EDIT*/
-				!PageReclaim(page) || !may_enter_fs) {
-#endif /*VENDOR_EDIT*/
+			/*
+			 * memcg doesn't have any dirty pages throttling so we
+			 * could easily OOM just because too many pages are in
+			 * writeback and there is nothing else to reclaim.
+			 *
+			 * Require may_enter_fs to wait on writeback, because
+			 * fs may not have submitted IO yet. And a loop driver
+			 * thread might enter reclaim, and deadlock if it waits
+			 * on a page for which it is needed to do the write
+			 * (loop masks off __GFP_IO|__GFP_FS for this reason);
+			 * but more thought would probably show more reasons.
+			 */
+			if (global_reclaim(sc) ||
+			    !PageReclaim(page) || !may_enter_fs) {
 				/*
 				 * This is slightly racy - end_page_writeback()
 				 * might have just cleared PageReclaim, then
@@ -1093,13 +1092,8 @@ free_it:
 cull_mlocked:
 		if (PageSwapCache(page))
 			try_to_free_swap(page);
-        unlock_page(page);
-        #ifdef VENDOR_EDIT
-        /* pdl@oppo.com: to fix memory leak */
-        list_add(&page->lru, &ret_pages);
-        #else
-        putback_lru_page(page);
-        #endif
+		unlock_page(page);
+		list_add(&page->lru, &ret_pages);
 		continue;
 
 activate_locked:

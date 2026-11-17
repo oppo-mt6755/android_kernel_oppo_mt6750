@@ -764,10 +764,7 @@ static void purge_configs_funcs(struct gadget_info *gi)
 			}
 		}
 		c->next_interface_id = 0;
-#ifdef VENDOR_EDIT 
-// wenxian.zhen@Phone.Bsp.Driver, 2016/03/30  added for solving null pointer
 		memset(c->interface, 0, sizeof(c->interface));
-#endif
 		c->superspeed = 0;
 		c->highspeed = 0;
 		c->fullspeed = 0;

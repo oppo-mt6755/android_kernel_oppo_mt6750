@@ -195,17 +195,10 @@ static int handle_to_path(int mountdirfd, struct file_handle __user *ufh,
 		goto out_err;
 	}
 	/* copy the full handle */
-#ifndef VENDOR_EDIT
-//Zhilong.zhang@Phone.Bsp.Driver, 2016/03/30, added kernel patch:read file_handle only once in handle_to_path
-	if (copy_from_user(handle, ufh,
-			   sizeof(struct file_handle) +
-			   f_handle.handle_bytes)) {
-#else
 	*handle = f_handle;
 	if (copy_from_user(&handle->f_handle,
 			   &ufh->f_handle,
- 			   f_handle.handle_bytes)) {
-#endif /*VENDOR_EDIT*/
+			   f_handle.handle_bytes)) {
 		retval = -EFAULT;
 		goto out_handle;
 	}
