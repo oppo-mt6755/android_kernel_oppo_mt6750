@@ -48,8 +48,7 @@ struct binder_buffer {
 	unsigned free:1;
 	unsigned allow_user_free:1;
 	unsigned async_transaction:1;
-	unsigned free_in_progress:1;
-	unsigned debug_id:28;
+	unsigned debug_id:29;
 
 	struct binder_transaction *transaction;
 
@@ -57,7 +56,7 @@ struct binder_buffer {
 	size_t data_size;
 	size_t offsets_size;
 	size_t extra_buffers_size;
-	uint8_t data[0];
+	void *data;
 };
 
 /**
@@ -102,6 +101,11 @@ struct binder_alloc {
 	int pid;
 };
 
+#ifdef CONFIG_ANDROID_BINDER_IPC_SELFTEST
+void binder_selftest_alloc(struct binder_alloc *alloc);
+#else
+static inline void binder_selftest_alloc(struct binder_alloc *alloc) {}
+#endif
 extern struct binder_buffer *binder_alloc_new_buf(struct binder_alloc *alloc,
 						  size_t data_size,
 						  size_t offsets_size,

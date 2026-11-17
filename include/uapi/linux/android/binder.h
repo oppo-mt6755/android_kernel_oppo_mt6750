@@ -1,5 +1,6 @@
 /*
  * Copyright (C) 2008 Google, Inc.
+ * Copyright (C) 2018 XiaoMi, Inc.
  *
  * Based on, but no longer compatible with, the original
  * OpenBinder.org binder driver interface, which is:
@@ -87,6 +88,14 @@ enum flat_binder_object_flags {
 	 * scheduling policy from the caller (for synchronous transactions).
 	 */
 	FLAT_BINDER_FLAG_INHERIT_RT = 0x800,
+
+	/**
+	 * @FLAT_BINDER_FLAG_TXN_SECURITY_CTX: request security contexts
+	 *
+	 * Only when set, causes senders to include their security
+	 * context
+	 */
+	FLAT_BINDER_FLAG_TXN_SECURITY_CTX = 0x1000,
 };
 
 #ifdef BINDER_IPC_32BIT
@@ -113,6 +122,7 @@ struct binder_object_header {
  * between processes.
  */
 struct flat_binder_object {
+	/* 8 bytes for large_flat_header. */
 	struct binder_object_header	hdr;
 	__u32				flags;
 
@@ -223,7 +233,7 @@ struct binder_write_read {
 /* Use with BINDER_VERSION, driver fills in fields. */
 struct binder_version {
 	/* driver protocol version -- increment with incompatible change */
-	__s32       protocol_version;
+	__s32	protocol_version;
 };
 
 /* This is the current protocol version. */
@@ -233,6 +243,19 @@ struct binder_version {
 #define BINDER_CURRENT_PROTOCOL_VERSION 8
 #endif
 
+/*
+ * Use with BINDER_GET_NODE_DEBUG_INFO, driver reads ptr, writes to all fields.
+ * Set ptr to NULL for the first call to get the info for the first node, and
+ * then repeat the call passing the previously returned value to get the next
+ * nodes.  ptr will be 0 when there are no more nodes.
+ */
+struct binder_node_debug_info {
+	binder_uintptr_t ptr;
+	binder_uintptr_t cookie;
+	__u32            has_strong_ref;
+	__u32            has_weak_ref;
+};
+
 #define BINDER_WRITE_READ		_IOWR('b', 1, struct binder_write_read)
 #define BINDER_SET_IDLE_TIMEOUT		_IOW('b', 3, __s64)
 #define BINDER_SET_MAX_THREADS		_IOW('b', 5, __u32)
@@ -240,6 +263,8 @@ struct binder_version {
 #define BINDER_SET_CONTEXT_MGR		_IOW('b', 7, __s32)
 #define BINDER_THREAD_EXIT		_IOW('b', 8, __s32)
 #define BINDER_VERSION			_IOWR('b', 9, struct binder_version)
+#define BINDER_GET_NODE_DEBUG_INFO	_IOWR('b', 11, struct binder_node_debug_info)
+#define BINDER_SET_CONTEXT_MGR_EXT	_IOW('b', 13, struct flat_binder_object)
 
 /*
  * NOTE: Two special error codes you should check for when calling
@@ -298,6 +323,11 @@ struct binder_transaction_data {
 	} data;
 };
 
+struct binder_transaction_data_secctx {
+	struct binder_transaction_data transaction_data;
+	binder_uintptr_t secctx;
+};
+
 struct binder_transaction_data_sg {
 	struct binder_transaction_data transaction_data;
 	binder_size_t buffers_size;
@@ -333,6 +363,11 @@ enum binder_driver_return_protocol {
 	BR_OK = _IO('r', 1),
 	/* No parameters! */
 
+	BR_TRANSACTION_SEC_CTX = _IOR('r', 2,
+				      struct binder_transaction_data_secctx),
+	/*
+	 * binder_transaction_data_secctx: the received command.
+	 */
 	BR_TRANSACTION = _IOR('r', 2, struct binder_transaction_data),
 	BR_REPLY = _IOR('r', 3, struct binder_transaction_data),
 	/*
@@ -469,15 +504,13 @@ enum binder_driver_command_protocol {
 	 * of looping threads it has available.
 	 */
 
-	BC_REQUEST_DEATH_NOTIFICATION = _IOW('c', 14,
-						struct binder_handle_cookie),
+	BC_REQUEST_DEATH_NOTIFICATION = _IOW('c', 14, struct binder_handle_cookie),
 	/*
 	 * int: handle
 	 * void *: cookie
 	 */
 
-	BC_CLEAR_DEATH_NOTIFICATION = _IOW('c', 15,
-						struct binder_handle_cookie),
+	BC_CLEAR_DEATH_NOTIFICATION = _IOW('c', 15, struct binder_handle_cookie),
 	/*
 	 * int: handle
 	 * void *: cookie
