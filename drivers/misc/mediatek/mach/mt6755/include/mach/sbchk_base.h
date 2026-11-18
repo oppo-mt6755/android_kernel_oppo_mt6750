@@ -17,10 +17,10 @@
 /**************************************************************************
  *  SBCHK PATH
  **************************************************************************/
-#define SBCHK_ENGINE_PATH                   "/system/bin/sbchk"
-#define SBCHK_MODULE_PATH                   "/system/lib/modules/sec.ko"
-#define MODEM_CORE_MODULE_PATH              "/system/lib/modules/ccci.ko"
-#define MODEM_PLAT_MODULE_PATH              "/system/lib/modules/ccci_plat.ko"
+#define SBCHK_ENGINE_PATH                   "/system/vendor/bin/sbchk"
+#define SBCHK_MODULE_PATH                   "/system/vendor/lib/modules/sec.ko"
+#define MODEM_CORE_MODULE_PATH              "/system/vendor/lib/modules/ccci.ko"
+#define MODEM_PLAT_MODULE_PATH              "/system/vendor/lib/modules/ccci_plat.ko"
 #define INIT_RC_PATH                        "init.rc"
 
 /**************************************************************************
@@ -33,9 +33,9 @@
  **************************************************************************/
 #if SBCHK_BASE_HASH_CHECK
 
-    #error MUST fill the hash value of '/system/bin/sbchk', 
-    'init.rc', '/system/lib/modules/sec.ko', '/system/lib/modules/ccci.ko' and 
-    '/system/lib/modules/ccci_plat.ko'
+    #error MUST fill the hash value of '/system/vendor/bin/sbchk', 
+    'init.rc', '/system/vendor/lib/modules/sec.ko', '/system/vendor/lib/modules/ccci.ko' and 
+    '/system/vendor/lib/modules/ccci_plat.ko'
 
     /* 
        Kernel will compare hash values to check if 
@@ -46,20 +46,20 @@
            (1) Turn off SBCHK_BASE_HASH_CHECK   
            (2) Download images and record kernel log      
            (3) Find the string pattern '[SBCHK_BASE]' in kernel log      
-           (4) The hash value of '/system/bin/sbchk' is calculated          
-               [SBCHK_BASE] Calculate the hash value of '/system/bin/sbchk' =
+           (4) The hash value of '/system/vendor/bin/sbchk' is calculated          
+               [SBCHK_BASE] Calculate the hash value of '/system/vendor/bin/sbchk' =
                xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx              
            (5) Fill hash value in SBCHK_ENGINE_HASH   
-           (6) The hash value of '/system/lib/modules/sec.ko' is calculated          
-               [SBCHK_BASE] Calculate the hash value of '/system/lib/modules/sec.ko' =
+           (6) The hash value of '/system/vendor/lib/modules/sec.ko' is calculated          
+               [SBCHK_BASE] Calculate the hash value of '/system/vendor/lib/modules/sec.ko' =
                xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx              
            (7) Fill hash value in SBCHK_MODULE_HASH
-           (8) The hash value of '/system/lib/modules/ccci.ko' is calculated          
-               [SBCHK_BASE] Calculate the hash value of '/system/lib/modules/ccci.ko' =
+           (8) The hash value of '/system/vendor/lib/modules/ccci.ko' is calculated          
+               [SBCHK_BASE] Calculate the hash value of '/system/vendor/lib/modules/ccci.ko' =
                xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx              
            (9) Fill hash value in MODEM_CORE_MODULE_HASH           
-           (10) The hash value of '/system/lib/modules/ccci_plat.ko' is calculated          
-               [SBCHK_BASE] Calculate the hash value of '/system/lib/modules/ccci_plat.ko' =
+           (10) The hash value of '/system/vendor/lib/modules/ccci_plat.ko' is calculated          
+               [SBCHK_BASE] Calculate the hash value of '/system/vendor/lib/modules/ccci_plat.ko' =
                xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx              
            (11) Fill hash value in MODEM_PLAT_MODULE_HASH                      
            (12) The hash value of 'init.rc' is calculated          

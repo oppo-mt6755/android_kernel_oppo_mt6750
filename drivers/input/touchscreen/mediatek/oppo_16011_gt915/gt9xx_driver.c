@@ -210,7 +210,7 @@ static u8 tpd_proximity_detect = 1;//0-->close ; 1--> far away
 
 
 //chenggang.li@bsp add for oppo
-#define GT9XX_UPDATE_FILE_PATH  "/system/etc/firmware/"
+#define GT9XX_UPDATE_FILE_PATH  "/system/vendor/etc/firmware/"
 char gt9xx_updata_file_path[128] = {0}; // fw patch.
 #define SUPPORT_GESTURE
 #define SUPPORT_REPORT_COORDINATE
