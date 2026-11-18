@@ -41,6 +41,9 @@ emergency restart, halt or poweroff, use both kernel command line options:
 
     printk.always_kmsg_dump=1 ramoops.dump_on_reboot=1
 
+ On bootloaders with a short command-line limit, ramoops.r=1 is an alias for
+ ramoops.dump_on_reboot=1 (A37 LK copies only 99 bytes from the boot header).
+
 The first enables the kernel's non-crash dump callbacks; the second allows
 those reasons in this ramoops backend. The console buffer also covers resets
 that bypass these callbacks, once the pstore console has registered. RAM must

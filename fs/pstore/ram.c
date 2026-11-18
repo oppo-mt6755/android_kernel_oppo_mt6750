@@ -109,6 +109,9 @@ static bool dump_on_reboot;
 module_param(dump_on_reboot, bool, 0600);
 MODULE_PARM_DESC(dump_on_reboot,
 		"also save restart/halt/poweroff dumps; requires printk.always_kmsg_dump=1");
+/* A37 LK preserves only 99 bytes of the boot image's command line. */
+module_param_named(r, dump_on_reboot, bool, 0600);
+MODULE_PARM_DESC(r, "short alias for dump_on_reboot");
 
 static int ramoops_ecc;
 module_param_named(ecc, ramoops_ecc, int, 0600);
