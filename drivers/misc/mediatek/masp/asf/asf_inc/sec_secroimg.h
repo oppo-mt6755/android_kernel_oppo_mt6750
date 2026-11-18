@@ -7,7 +7,7 @@
  * [FILE SYSTEM SECROIMG PATH]
  **************************************************************************/
 /* it is only used for non-security platform */
-#define FS_SECRO_PATH                   "/system/secro/AC_REGION"
+#define FS_SECRO_PATH                   "/system/vendor/secro/AC_REGION"
 
 
 /**************************************************************************

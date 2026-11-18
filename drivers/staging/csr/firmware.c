@@ -234,7 +234,7 @@ int
 uf_run_unifihelper(unifi_priv_t *priv)
 {
 #ifdef ANDROID_BUILD
-    char *prog = "/system/bin/unififw";
+    char *prog = "/system/vendor/bin/unififw";
 #else
     char *prog = "/usr/sbin/unififw";
 #endif /* ANDROID_BUILD */
