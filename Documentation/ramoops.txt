@@ -35,6 +35,19 @@ information.
 Dumping both oopses and panics can be done by setting 1 in the "dump_oops"
 variable while setting 0 in that variable dumps only the panics.
 
+With CONFIG_PSTORE_CONSOLE, console output is written continuously, even
+without an oops or panic. To additionally save a dmesg record on orderly or
+emergency restart, halt or poweroff, use both kernel command line options:
+
+    printk.always_kmsg_dump=1 ramoops.dump_on_reboot=1
+
+The first enables the kernel's non-crash dump callbacks; the second allows
+those reasons in this ramoops backend. The console buffer also covers resets
+that bypass these callbacks, once the pstore console has registered. RAM must
+still survive the reset: neither option preserves data across power loss or
+a bootloader that clears the reserved region. Keep the same memory address
+and buffer sizes in the next kernel used to read /sys/fs/pstore.
+
 The module uses a counter to record multiple dumps but the counter gets reset
 on restart (i.e. new dumps after the restart will overwrite old ones).
 

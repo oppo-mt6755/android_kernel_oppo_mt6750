@@ -105,6 +105,11 @@ module_param(dump_oops, int, 0600);
 MODULE_PARM_DESC(dump_oops,
 		"set to 1 to dump oopses, 0 to only dump panics (default 1)");
 
+static bool dump_on_reboot;
+module_param(dump_on_reboot, bool, 0600);
+MODULE_PARM_DESC(dump_on_reboot,
+		"also save restart/halt/poweroff dumps; requires printk.always_kmsg_dump=1");
+
 static int ramoops_ecc;
 module_param_named(ecc, ramoops_ecc, int, 0600);
 MODULE_PARM_DESC(ramoops_ecc,
@@ -199,7 +204,10 @@ static ssize_t ramoops_pstore_read(u64 *id, enum pstore_type_id *type,
 	struct ramoops_context *cxt = psi->data;
 	struct persistent_ram_zone *prz;
 
-	prz = ramoops_get_next_prz(cxt->przs, &cxt->dump_read_cnt,
+	/* Empty slots must not hide records in subsequent slots. */
+	prz = NULL;
+	while (!prz_ok(prz) && cxt->dump_read_cnt < cxt->max_dump_cnt)
+		prz = ramoops_get_next_prz(cxt->przs, &cxt->dump_read_cnt,
 				   cxt->max_dump_cnt, id, type,
 				   PSTORE_TYPE_DMESG, 1);
 	if (!prz_ok(prz))
@@ -233,6 +241,7 @@ static ssize_t ramoops_pstore_read(u64 *id, enum pstore_type_id *type,
 	/* TODO(kees): Bogus time for the moment. */
 	time->tv_sec = 0;
 	time->tv_nsec = 0;
+	*count = 0;
 
 	size = persistent_ram_old_size(prz);
 
@@ -311,12 +320,21 @@ static int notrace ramoops_pstore_write_buf(enum pstore_type_id type,
 		return ipanic_kmsg_write(part, buf, size);
 	}
 */
-	/* Out of the various dmesg dump types, ramoops is currently designed
-	 * to only store crash logs, rather than storing general kernel logs.
-	 */
-	if (reason != KMSG_DUMP_OOPS &&
-	    reason != KMSG_DUMP_PANIC)
+	/* Keep crash-only behaviour unless reboot diagnostics were requested. */
+	switch (reason) {
+	case KMSG_DUMP_OOPS:
+	case KMSG_DUMP_PANIC:
+		break;
+	case KMSG_DUMP_EMERG:
+	case KMSG_DUMP_RESTART:
+	case KMSG_DUMP_HALT:
+	case KMSG_DUMP_POWEROFF:
+		if (dump_on_reboot)
+			break;
+		/* fall through */
+	default:
 		return -EINVAL;
+	}
 
 	/* Skip Oopes when configured to do so. */
 	if (reason == KMSG_DUMP_OOPS && !cxt->dump_oops)

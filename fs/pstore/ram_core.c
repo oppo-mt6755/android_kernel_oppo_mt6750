@@ -331,6 +331,9 @@ int notrace persistent_ram_write(struct persistent_ram_zone *prz,
 
 	persistent_ram_update_header_ecc(prz);
 
+	/* Drain writes to the write-combined mapping before a possible reset. */
+	wmb();
+
 	return count;
 }
 
