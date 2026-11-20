@@ -161,9 +161,6 @@ ACDK_KD_SENSOR_INIT_FUNCTION_STRUCT kdSensorList[MAX_NUM_OF_SUPPORT_SENSOR+1] =
 #if defined(S5K3H7YX_MIPI_RAW)
     {S5K3H7YX_SENSOR_ID, SENSOR_DRVNAME_S5K3H7YX_MIPI_RAW, S5K3H7YX_MIPI_RAW_SensorInit},
 #endif
-#if defined(OV8865R_MIPI_RAW)
-    {OV8865R_SENSOR_ID, SENSOR_DRVNAME_OV8865R_MIPI_RAW, OV8865R_MIPI_RAW_SensorInit},
-#endif
 
 #if defined(OV8865_MIPI_RAW)
     {OV8865_SENSOR_ID, SENSOR_DRVNAME_OV8865_MIPI_RAW, OV8865_MIPI_RAW_SensorInit},
@@ -177,6 +174,14 @@ ACDK_KD_SENSOR_INIT_FUNCTION_STRUCT kdSensorList[MAX_NUM_OF_SUPPORT_SENSOR+1] =
 #endif
 #if defined(OV5648_MIPI_RAW)
     {OV5648MIPI_SENSOR_ID, SENSOR_DRVNAME_OV5648_MIPI_RAW, OV5648MIPISensorInit},
+#endif
+/* A37 libcameracustom SensorList indexes are imx179, s5k3h7yx, ov5695,
+ * ov5648. SET_DRIVER takes that index, not a sensor ID. Keep optional
+ * kernel-only drivers after these entries so front-camera probing selects
+ * the matching driver instead of ov5695 at the ov5648 index.
+ */
+#if defined(OV8865R_MIPI_RAW)
+    {OV8865R_SENSOR_ID, SENSOR_DRVNAME_OV8865R_MIPI_RAW, OV8865R_MIPI_RAW_SensorInit},
 #endif
 #if defined(HI545_MIPI_RAW)
     {HI545MIPI_SENSOR_ID, SENSOR_DRVNAME_HI545_MIPI_RAW, HI545_MIPI_RAW_SensorInit},

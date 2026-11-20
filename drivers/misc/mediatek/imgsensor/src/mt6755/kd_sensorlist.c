@@ -3183,9 +3183,9 @@ static int compat_get_acdk_sensor_getinfo_struct(
     err |= put_user(compat_ptr(p), &data->pInfo[0]);
     err = get_user(p, &data32->pInfo[1]);
     err |= put_user(compat_ptr(p), &data->pInfo[1]);
-    err = get_user(p, &data32->pInfo[0]);
+    err |= get_user(p, &data32->pConfig[0]);
     err |= put_user(compat_ptr(p), &data->pConfig[0]);
-    err = get_user(p, &data32->pInfo[1]);
+    err |= get_user(p, &data32->pConfig[1]);
     err |= put_user(compat_ptr(p), &data->pConfig[1]);
 
     return err;
@@ -3462,7 +3462,10 @@ static long CAMERA_HW_Ioctl_Compat(struct file *filp, unsigned int cmd, unsigned
     PK_DBG("[CAMERA SENSOR] KDIMGSENSORIOC_X_GETRESOLUTION2\n");
 
     data32 = compat_ptr(arg);
-    data = compat_alloc_user_space(sizeof(data));
+    /* Two native pointers, not sizeof the pointer to the structure. The
+     * undersized allocation overwrites the 32-bit ioctl caller's stack.
+     */
+    data = compat_alloc_user_space(sizeof(*data));
     if (data == NULL)
         return -EFAULT;
     PK_DBG("[CAMERA SENSOR] compat_get_acdk_sensor_resolution_info_struct\n");
