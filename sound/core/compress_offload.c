@@ -873,11 +873,10 @@ static long snd_compr_ioctl_compat(struct file *file, unsigned int cmd, unsigned
 	case _IOC_NR(SNDRV_COMPRESS_DRAIN):
 	case _IOC_NR(SNDRV_COMPRESS_PARTIAL_DRAIN):
 	case _IOC_NR(SNDRV_COMPRESS_NEXT_TRACK):
-        return file->f_op->unlocked_ioctl(file, cmd,arg);
-		break;
-
+		return file->f_op->unlocked_ioctl(file, cmd, arg);
+	default:
+		return -ENOIOCTLCMD;
 	}
-
 }
 
 #else
