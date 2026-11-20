@@ -383,7 +383,7 @@ ssize_t WIFI_write(struct file *filp, const char __user *buf, size_t count, loff
 			if (MTK_WCN_BOOL_FALSE == mtk_wcn_wmt_func_on(WMTDRV_TYPE_WIFI)) {
 				WIFI_ERR_FUNC("WMT turn on WIFI fail!\n");
 				WMT_CHECK_DO_CHIP_RESET();
-				powered = 1;
+				powered = 0;
 			} else {
 				powered = 1;
 				retval = count;
@@ -449,7 +449,7 @@ ssize_t WIFI_write(struct file *filp, const char __user *buf, size_t count, loff
 				if (MTK_WCN_BOOL_FALSE == mtk_wcn_wmt_func_on(WMTDRV_TYPE_WIFI)) {
 					WIFI_ERR_FUNC("WMT turn on WIFI fail!\n");
 					WMT_CHECK_DO_CHIP_RESET();
-					powered = 1;
+					powered = 0;
 					goto done;
 				} else {
 					powered = 1;
