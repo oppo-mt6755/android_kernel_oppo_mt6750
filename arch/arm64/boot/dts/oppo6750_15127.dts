@@ -8,6 +8,22 @@
 //Fuchun.Liao modify end
 
 / {
+	/* Oreo init mounts system before loading policy and parsing services. */
+	firmware {
+		android {
+			compatible = "android,firmware";
+			fstab {
+				compatible = "android,fstab";
+				system {
+					compatible = "android,system";
+					dev = "/dev/block/platform/mtk-msdc.0/11230000.msdc0/by-name/system";
+					type = "ext4";
+					mnt_flags = "ro";
+					fsmgr_flags = "wait";
+				};
+			};
+		};
+	};
 	memory@40000000 {
 		device_type = "memory";
 		reg = <0 0x40000000 0 0x3e800000>;
