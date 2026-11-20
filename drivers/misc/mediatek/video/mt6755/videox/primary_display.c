@@ -3132,7 +3132,8 @@ int primary_display_release_fence_fake(void)
 
 int primary_display_wait_for_vsync(void *config)
 {
-	disp_session_vsync_config *c = (disp_session_vsync_config *) config;
+	disp_session_vsync_config local_config = {0};
+	disp_session_vsync_config *c = config ? config : &local_config;
 	int ret = 0, has_vsync = 1;
 	unsigned long long ts = 0ULL;
 	static int count;
@@ -3182,7 +3183,8 @@ int primary_display_wait_for_vsync(void *config)
 		g_skip = 0;
 	}
 
-	ret = dpmgr_wait_event_ts(pgc->dpmgr_handle, DISP_PATH_EVENT_IF_VSYNC, &ts);
+	ret = dpmgr_wait_event_ts_timeout(pgc->dpmgr_handle, DISP_PATH_EVENT_IF_VSYNC,
+					&ts, HZ / 10);
 
 	if (ret == -2) {
 		DISPPR_ERROR("vsync for primary display path not enabled yet\n");
@@ -3197,7 +3199,8 @@ int primary_display_wait_for_vsync(void *config)
 
 	if (pgc->vsync_drop) {
 		/* ret = dpmgr_wait_event_timeout(pgc->dpmgr_handle, DISP_PATH_EVENT_IF_VSYNC, HZ/10); */
-		ret = dpmgr_wait_event_ts(pgc->dpmgr_handle, DISP_PATH_EVENT_IF_VSYNC, &ts);
+		ret = dpmgr_wait_event_ts_timeout(pgc->dpmgr_handle, DISP_PATH_EVENT_IF_VSYNC,
+						&ts, HZ / 10);
 	}
 
 out:

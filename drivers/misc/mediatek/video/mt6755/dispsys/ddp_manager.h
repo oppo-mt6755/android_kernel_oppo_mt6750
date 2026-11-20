@@ -318,6 +318,8 @@ int dpmgr_wait_event_timeout(disp_path_handle dp_handle, DISP_PATH_EVENT event, 
 */
 int dpmgr_wait_event(disp_path_handle dp_handle, DISP_PATH_EVENT event);
 int dpmgr_wait_event_ts(disp_path_handle dp_handle, DISP_PATH_EVENT event, unsigned long long *event_ts);
+int dpmgr_wait_event_ts_timeout(disp_path_handle dp_handle, DISP_PATH_EVENT event,
+			      unsigned long long *event_ts, unsigned long timeout);
 
 
 /* power on, turn on each modules clk.

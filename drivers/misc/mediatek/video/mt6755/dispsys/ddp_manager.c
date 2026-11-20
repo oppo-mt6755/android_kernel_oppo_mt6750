@@ -2,6 +2,7 @@
 
 #include <linux/slab.h>
 #include <linux/mutex.h>
+#include <linux/ktime.h>
 
 #include <mach/mt_irq.h>
 #include "disp_helper.h"
@@ -1787,6 +1788,36 @@ int dpmgr_wait_event(disp_path_handle dp_handle, DISP_PATH_EVENT event)
 int dpmgr_wait_event_ts(disp_path_handle dp_handle, DISP_PATH_EVENT event, unsigned long long *event_ts)
 {
 	return _dpmgr_wait_event(dp_handle, event, event_ts);
+}
+
+/* A userspace vsync waiter must also return when the panel stops its IRQs. */
+int dpmgr_wait_event_ts_timeout(disp_path_handle dp_handle, DISP_PATH_EVENT event,
+			      unsigned long long *event_ts, unsigned long timeout)
+{
+	ddp_path_handle handle = (ddp_path_handle)dp_handle;
+	DPMGR_WQ_HANDLE *wq_handle;
+	unsigned long long cur_time;
+	long ret;
+	unsigned long long elapsed;
+
+	if (!handle)
+		return -EINVAL;
+	wq_handle = &handle->wq_list[event];
+	if (!wq_handle->init)
+		return -2;
+	cur_time = sched_clock();
+	ret = wait_event_interruptible_timeout(wq_handle->wq,
+					cur_time < wq_handle->data, timeout);
+	if (ret <= 0)
+		return ret < 0 ? ret : -ETIMEDOUT;
+	if (event_ts) {
+		/* IRQs use sched_clock(), whose epoch differs from userspace's
+		 * CLOCK_MONOTONIC on this BSP. Preserve IRQ age in the UAPI clock.
+		 */
+		elapsed = sched_clock() - wq_handle->data;
+		*event_ts = ktime_to_ns(ktime_get()) - elapsed;
+	}
+	return 0;
 }
 
 int dpmgr_signal_event(disp_path_handle dp_handle, DISP_PATH_EVENT event)
