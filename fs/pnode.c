@@ -366,7 +366,11 @@ int propagate_remount(struct mount *mnt) {
 	int ret = 0;
 
 	if (sb->s_op->copy_mnt_data) {
-		for (m = first_slave(mnt); m->mnt_slave.next != &mnt->mnt_slave_list; m = next_slave(m)) {
+		/* Test the list node itself, not its successor: the latter
+		 * skips the final slave (often the 64-bit zygote namespace).
+		 * Keep peer bind mounts' independent gid/mask unchanged.
+		 */
+		list_for_each_entry(m, &mnt->mnt_slave_list, mnt_slave) {
 			sb->s_op->copy_mnt_data(m->mnt.data, mnt->mnt.data);
 		}
 	}
