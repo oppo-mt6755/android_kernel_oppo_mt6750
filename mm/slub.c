@@ -890,8 +890,12 @@ static int slab_pad_check(struct kmem_cache *s, struct page *page)
 	while (end > fault && end[-1] == POISON_INUSE)
 		end--;
 
+	/* Vendor slab_err() is fatal; retain evidence before it calls BUG(). */
+	pr_err("SLUB padding: cache=%s object=%u size=%u reserved=%u offset=%lu value=%02x\n",
+		s->name, s->object_size, s->size, s->reserved,
+		(unsigned long)(fault - start), *fault);
+	print_section("Padding ", fault, min_t(size_t, end - fault, 64));
 	slab_err(s, page, "Padding overwritten. 0x%p-0x%p", fault, end - 1);
-	print_section("Padding ", end - remainder, remainder);
 
 	restore_bytes(s, "slab padding", POISON_INUSE, end - remainder, end);
 	return 0;
