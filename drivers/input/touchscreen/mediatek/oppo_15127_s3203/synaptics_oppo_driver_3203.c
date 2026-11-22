@@ -29,6 +29,7 @@
 #include <linux/i2c.h>
 #include <linux/input.h>
 #include <linux/interrupt.h>
+#include <linux/fb.h>
 #include <linux/io.h>
 #include <linux/platform_device.h>
 #include <linux/slab.h>
@@ -361,7 +362,10 @@ static int synapitcs_ts_update(struct i2c_client *client, const uint8_t *data, u
 static int synaptics_enable_interrupt_for_gesture(struct synaptics_ts_data *ts, int enable);
 #endif
 
-#ifdef CONFIG_HAS_EARLYSUSPEND
+#if defined(CONFIG_FB)
+static int synaptics_fb_event(struct notifier_block *notifier,
+		unsigned long event, void *data);
+#elif defined(CONFIG_HAS_EARLYSUSPEND)
 static void synaptics_ts_early_suspend(struct early_suspend *h);
 static void synaptics_ts_late_resume(struct early_suspend *h);
 #endif
@@ -426,7 +430,11 @@ struct synaptics_ts_data {
 	struct device						*dev;
 	uint32_t no_erroponit_exist;
 	uint32_t finger_num;
+#if defined(CONFIG_FB)
+	struct notifier_block fb_notifier;
+#elif defined(CONFIG_HAS_EARLYSUSPEND)
 	struct early_suspend early_suspend;
+#endif
 	/*******for FW update*******/
 	bool suspended;
 	bool loading_fw;
@@ -522,11 +530,13 @@ s32 i2c_smbus_read_byte_data_s3203(struct i2c_client *client, u8 command)
 {
 	int ret=0;
 
-	u8 read_dyte_data ;
+	u8 read_dyte_data;
 
 	ret = i2c_dma_read(client, command, 1,&read_dyte_data); 
-	if (ret < 0)
+	if (ret < 0) {
 		TPD_ERR("%s  error \n",__func__);
+		return ret;
+	}
 	return read_dyte_data;
 
 }
@@ -3569,7 +3579,7 @@ static struct i2c_driver tpd_i2c_driver = {
 	.probe		= synaptics_ts_probe,
 	//.remove		= __devexit_p(synaptics_ts_remove),
 	//.detect         = synaptics_ts_detect,                           
-#ifndef CONFIG_HAS_EARLYSUSPEND
+#if !defined(CONFIG_FB) && !defined(CONFIG_HAS_EARLYSUSPEND)
 	.suspend	= synaptics_ts_suspend,
 	.resume		= synaptics_ts_resume,
 #endif
@@ -4009,7 +4019,12 @@ static int synaptics_ts_probe(
 	}
 #endif
 
-#ifdef CONFIG_HAS_EARLYSUSPEND
+#if defined(CONFIG_FB)
+	ts->fb_notifier.notifier_call = synaptics_fb_event;
+	ret = fb_register_client(&ts->fb_notifier);
+	if (ret)
+		TPD_ERR("failed to register display notifier: %d\n", ret);
+#elif defined(CONFIG_HAS_EARLYSUSPEND)
 	ts->early_suspend.level = EARLY_SUSPEND_LEVEL_BLANK_SCREEN + 1;
 	ts->early_suspend.suspend = synaptics_ts_early_suspend;
 	ts->early_suspend.resume = synaptics_ts_late_resume;
@@ -4040,7 +4055,9 @@ static int __devexit synaptics_ts_remove(struct i2c_client *client)
 	unregister_remote_device();
 #endif
 
-#ifdef CONFIG_HAS_EARLYSUSPEND
+#if defined(CONFIG_FB)
+	fb_unregister_client(&ts->fb_notifier);
+#elif defined(CONFIG_HAS_EARLYSUSPEND)
 	unregister_early_suspend(&ts->early_suspend);
 #endif
 
@@ -4070,7 +4087,14 @@ static int synaptics_ts_suspend(struct i2c_client *client)
 		return -1;
 	}
 
+	/* Finish a preceding unblank before programming sleep registers. */
+	flush_work(&ts->speed_up_work);
 	mutex_lock(&ts->mutex);
+	if (ts->loading_fw || ts->suspended) {
+		mutex_unlock(&ts->mutex);
+		return 0;
+	}
+	ts->suspended = true;
 	
 	gesture_enable = 1;
 	//TPD_ERR("gesture_enable = %d is_suspend=%d\n", gesture_enable,is_suspend);
@@ -4184,130 +4208,127 @@ static int synaptics_ts_resume(struct i2c_client *client)
 
 
 
-static void speedup_synaptics_resume(struct work_struct *work)
+static int synaptics_restore_panel(struct synaptics_ts_data *ts)
 {
 	int ret;
-	struct synaptics_ts_data *ts = container_of(work,struct synaptics_ts_data, speed_up_work);
-	TPD_ERR("%s \n", __func__);
 
-	/***********report Up key when resume********/	
-	mutex_lock(&ts->mutex);
-
-	is_suspend = 0;
-	atomic_set(&is_key_touch, 0);
-	atomic_set(&is_lcd_touch, 0);
-	
-	//is_gesture_enable = 0;
-	
-#ifdef TPD_USE_EINT
-	disable_irq(touch_irq);    
-#endif
-
-	if(ts->input_dev == NULL)
-	{
-		ret = -ENOMEM;
-		TPD_ERR("input_dev  registration is not complete\n");
-		goto ERR_RESUME;
-	}
-	gesture_enable = 0;
-	/***********report Up key when suspend********/	
-	synaptics_rmi4_free_fingers(ts);
-
-	all_finger_up = 0;
-	/***Reset TP ******/ 
-	ret = i2c_smbus_write_byte_data_s3203(ts->client, 0xff, 0x0); 
-	if( ret < 0 ){
-		TPD_ERR("%s: failed for page select try again later\n", __func__);
-		msleep(20);
-		ret = i2c_smbus_write_byte_data_s3203(ts->client, 0xff, 0x0); 
-		if( ret < 0 ){
-			TPD_ERR("%s: failed for page select try again later\n", __func__);
-			goto ERR_I2C;
-		}
-	}
-	ret = i2c_smbus_read_byte_data_s3203(ts->client, F01_RMI_DATA_BASE);
-	free_irq(ts->client->irq, ts);
-	ret |= i2c_smbus_write_byte_data_s3203(ts->client, F01_RMI_CMD_BASE,0x01);
-	if(ret < 0)
-		goto ERR_I2C;
+	ret = synaptics_rmi4_set_page(ts->client, 0xff, 0);
+	if (ret < 0)
+		return ret;
+	ret = i2c_smbus_write_byte_data_s3203(ts->client,
+			F01_RMI_CMD_BASE, 0x01);
+	if (ret < 0)
+		return ret;
 	msleep(50);
 
 #ifdef SUPPORT_GESTURE
-	if( 1 == atomic_read(&double_enable))
-	{
-		// mignqiang.guo 2015/4/19 add for status bar pull down
-		ret = i2c_smbus_write_byte_data_s3203(ts->client, F01_RMI_CTRL02, 1); //1*10ms = 30ms  
-		if( ret < 0 ){
-			TPD_ERR("%s i2c error\n",__func__);
-		}	
-		//end
-		synaptics_enable_interrupt_for_gesture(ts, 0); 
-	}	
-#endif
-
-#ifdef SUPPORT_GLOVES_MODE
-	synaptics_glove_mode_enable(ts);
-#endif	
-
-#ifdef SUPPORT_LEATHER
-	TPD_ERR("hall_close_flag = %d \n",hall_close_flag);
-	hall_interrupt_enable_glove_mode(atomic_read(&hall_close_flag));
-#endif 
-
-	/*****Normal Init TP********/
-	ret = synaptics_init_panel(ts);
-	if( ret < 0 ){
-		TPD_ERR("%s: TP init failed\n", __func__);
-		goto ERR_I2C;
+	if (atomic_read(&double_enable)) {
+		ret = i2c_smbus_write_byte_data_s3203(ts->client,
+				F01_RMI_CTRL02, 1);
+		if (ret < 0)
+			return ret;
+		ret = synaptics_enable_interrupt_for_gesture(ts, 0);
+		if (ret < 0)
+			return ret;
 	}
-	ret = request_irq(ts_g->client->irq, (irq_handler_t)synaptics_ts_irq_handler, ts->irq_flags, TPD_DEVICE, ts_g);	
-
+#endif
+#ifdef SUPPORT_GLOVES_MODE
+	ret = synaptics_glove_mode_enable(ts);
+	if (ret < 0)
+		return ret;
+#endif
+#ifdef SUPPORT_LEATHER
+	hall_interrupt_enable_glove_mode(atomic_read(&hall_close_flag));
+#endif
+	ret = synaptics_init_panel(ts);
+	if (ret < 0)
+		return ret;
 	msleep(150);
 	ret = synaptics_enable_interrupt(ts, 1);
-	if(ret){
-		TPD_ERR("%s:can't  enable interrupt!\n", __func__);
-		goto ERR_I2C;
-	}
+	if (ret < 0)
+		return ret;
 
-ERR_RESUME:
-#ifdef TPD_USE_EINT
-	enable_irq(touch_irq);    
-#endif
-	mutex_unlock(&ts->mutex);
-	return;
-ERR_I2C:
-	hard_reset_tp(ts);
-	#ifdef TPD_USE_EINT
-	enable_irq(touch_irq);    
-	#endif
-	mutex_unlock(&ts->mutex);
-	//queue_work(speedup_resume_wq, &ts->speed_up_work);
-	return;
+	ret = i2c_smbus_read_byte_data_s3203(ts->client, F01_RMI_CTRL00);
+	if (ret < 0)
+		return ret;
+	return (ret & 0x03) ? -EIO : 0;
 }
 
-/*----------------------------------------------------------------------------*/
-#ifdef CONFIG_HAS_EARLYSUSPEND
+static void speedup_synaptics_resume(struct work_struct *work)
+{
+	struct synaptics_ts_data *ts = container_of(work,
+			struct synaptics_ts_data, speed_up_work);
+	int ret = -EIO;
+	int attempt;
+
+	mutex_lock(&ts->mutex);
+	if (!ts->suspended || ts->loading_fw)
+		goto out;
+
+	/* Keep the registered host IRQ; client->irq is not the DT EINT. */
+#ifdef TPD_USE_EINT
+	disable_irq(touch_irq);
+#endif
+	synaptics_rmi4_free_fingers(ts);
+	all_finger_up = 0;
+	gesture_enable = 0;
+	for (attempt = 0; attempt < 2; attempt++) {
+		ret = synaptics_restore_panel(ts);
+		if (!ret)
+			break;
+		TPD_ERR("panel resume attempt %d failed: %d\n", attempt + 1, ret);
+		msleep(20);
+	}
+	if (!ret) {
+		is_suspend = 0;
+		ts->suspended = false;
+		TPD_ERR("panel resumed after display unblank\n");
+	} else {
+		TPD_ERR("panel remains suspended after resume failure: %d\n", ret);
+	}
+#ifdef TPD_USE_EINT
+	enable_irq(touch_irq);
+#endif
+out:
+	mutex_unlock(&ts->mutex);
+}
+
+#if defined(CONFIG_FB)
+static int synaptics_fb_event(struct notifier_block *notifier,
+		unsigned long event, void *data)
+{
+	struct synaptics_ts_data *ts = container_of(notifier,
+			struct synaptics_ts_data, fb_notifier);
+	struct fb_event *fb_event = data;
+	int blank;
+
+	if (event != FB_EVENT_BLANK || !fb_event || !fb_event->data ||
+			!fb_event->info || fb_event->info->node != 0)
+		return NOTIFY_DONE;
+
+	/* Modern autosleep blanks fbdev without the legacy early-suspend path. */
+	blank = *(int *)fb_event->data;
+	if (blank == FB_BLANK_POWERDOWN)
+		synaptics_ts_suspend(ts->client);
+	else if (blank == FB_BLANK_UNBLANK || blank == FB_BLANK_NORMAL)
+		synaptics_ts_resume(ts->client);
+	return NOTIFY_OK;
+}
+#elif defined(CONFIG_HAS_EARLYSUSPEND)
 static void synaptics_ts_early_suspend(struct early_suspend *h)
 {
-	struct synaptics_ts_data *ts;
-	ts = container_of(h, struct synaptics_ts_data, early_suspend);
+	struct synaptics_ts_data *ts = container_of(h,
+			struct synaptics_ts_data, early_suspend);
 
-	if(ts_g->loading_fw) //when update tp fw , can not go to sleep
-		return ;
-		
 	synaptics_ts_suspend(ts->client);
-
 }
-#endif
 
-#ifdef CONFIG_HAS_EARLYSUSPEND
 static void synaptics_ts_late_resume(struct early_suspend *h)
 {
-	struct synaptics_ts_data *ts;
-	ts = container_of(h, struct synaptics_ts_data, early_suspend);
+	struct synaptics_ts_data *ts = container_of(h,
+			struct synaptics_ts_data, early_suspend);
 
 	synaptics_ts_resume(ts->client);
-
 }
 #endif
 
