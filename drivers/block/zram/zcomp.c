@@ -327,6 +327,7 @@ struct zcomp *zcomp_create(const char *compress, int max_strm)
 {
 	struct zcomp *comp;
 	struct zcomp_backend *backend;
+	int error;
 
 	backend = find_backend(compress);
 	if (!backend)
@@ -338,10 +339,10 @@ struct zcomp *zcomp_create(const char *compress, int max_strm)
 
 	comp->backend = backend;
 	if (max_strm > 1)
-		zcomp_strm_multi_create(comp, max_strm);
+		error = zcomp_strm_multi_create(comp, max_strm);
 	else
-		zcomp_strm_single_create(comp);
-	if (!comp->stream) {
+		error = zcomp_strm_single_create(comp);
+	if (error) {
 		kfree(comp);
 		return NULL;
 	}
