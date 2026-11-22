@@ -7,7 +7,7 @@ ifeq ($(CONFIG_MTK_COMBO),y)
 	obj-y += common_drv_init.o
 	obj-y += bluetooth_drv_init.o
 	obj-y += gps_drv_init.o
-	obj-y += fm_drv_init.o
+	obj-$(CONFIG_MTK_FM_SUPPORT) += fm_drv_init.o
 	obj-y += wlan_drv_init.o
 ifneq ($(filter "MT6630",$(CONFIG_MTK_COMBO_CHIP)),)
 	obj-y += ant_drv_init.o
