@@ -119,3 +119,23 @@ SERIAL_CORE_CONSOLE
 website: http://android.git.kernel.org
 
 mailing-lists: android-kernel@googlegroups.com
+
+LineageOS 17.1 IPC and emulated storage update
+-------------------------------------------
+Binder and sdcardfs are imported from:
+https://github.com/acroreiser/android_kernel_lenovo_a6010
+branch lineage-17.1, commit f7d8195672d653c66eff51066123f46977100f86.
+
+The OPPO hardware drivers and configuration remain in use. Binder keeps its
+native ARM64 and compat 64-bit wire ABI, local scheduler priority definitions,
+and diagnostic errors. The sdcardfs import retains lower-file fsnotify_open;
+the unused d_canonical_path callback is omitted because this VFS lacks it.
+The unshared_obb flag is initialized explicitly and shown in mount options.
+
+free_vfsmnt owns per-mount data and the mount ID. Failed mount and clone paths
+must not release either resource a second time. Android 10 probing a mount
+with unshared_obb exposed this double free and caused a SLUB panic.
+
+Device validation: invalid sdcardfs options return errors safely, per-user and
+legacy shared OBB layouts work, bind/remount and read/write pass. Native and
+compat Binder ABI8 open/mmap/looper/close probes pass on all three device nodes.
