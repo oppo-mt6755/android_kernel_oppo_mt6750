@@ -139,3 +139,11 @@ with unshared_obb exposed this double free and caused a SLUB panic.
 Device validation: invalid sdcardfs options return errors safely, per-user and
 legacy shared OBB layouts work, bind/remount and read/write pass. Native and
 compat Binder ABI8 open/mmap/looper/close probes pass on all three device nodes.
+
+Android 10 threaded /proc/self/fd access
+--------------------------------------
+Backport upstream 54708d2858e79a2bdda10bf8a20c80eb96c20613 (proc: actually
+make proc_fd_permission() thread-friendly). Ambient/file capabilities can
+make /proc/<pid>/fd root-owned. Check the caller's thread group rather than
+only its thread ID, so SurfaceFlinger worker threads can resolve their own
+open library descriptors. Other processes retain the normal access checks.
