@@ -66,6 +66,8 @@ static struct vfsmount *shm_mnt;
 #include <linux/highmem.h>
 #include <linux/seq_file.h>
 #include <linux/magic.h>
+#include <linux/syscalls.h>
+#include <uapi/linux/memfd.h>
 
 #include <asm/uaccess.h>
 #include <asm/pgtable.h>
@@ -3043,6 +3045,58 @@ put_memory:
 	return res;
 }
 EXPORT_SYMBOL_GPL(shmem_file_setup);
+
+/* Anonymous shared files for ART's separate writable/executable JIT views.
+ * This kernel has no sealing infrastructure, so reject sealing requests.
+ * Based on upstream commit 9183df25fe7b194563db3fec6dc3202a5855839c.
+ */
+#ifdef CONFIG_SHMEM
+SYSCALL_DEFINE2(memfd_create, const char __user *, uname, unsigned int, flags)
+{
+	static const char prefix[] = "memfd:";
+	struct file *file;
+	char *name;
+	long len;
+	int fd, error;
+
+	if (flags & ~MFD_CLOEXEC)
+		return -EINVAL;
+	len = strnlen_user(uname, NAME_MAX - sizeof(prefix) + 2);
+	if (len <= 0)
+		return -EFAULT;
+	if (len > NAME_MAX - sizeof(prefix) + 2)
+		return -EINVAL;
+	name = kmalloc(sizeof(prefix) - 1 + len, GFP_KERNEL);
+	if (!name)
+		return -ENOMEM;
+	memcpy(name, prefix, sizeof(prefix) - 1);
+	if (copy_from_user(name + sizeof(prefix) - 1, uname, len) ||
+	    name[sizeof(prefix) - 2 + len]) {
+		error = -EFAULT;
+		goto free_name;
+	}
+	fd = get_unused_fd_flags(flags & MFD_CLOEXEC ? O_CLOEXEC : 0);
+	if (fd < 0) {
+		error = fd;
+		goto free_name;
+	}
+	file = shmem_file_setup(name, 0, VM_NORESERVE, 0);
+	if (IS_ERR(file)) {
+		error = PTR_ERR(file);
+		put_unused_fd(fd);
+		goto free_name;
+	}
+	file->f_mode |= FMODE_LSEEK | FMODE_PREAD | FMODE_PWRITE;
+	file->f_flags |= O_RDWR | O_LARGEFILE;
+	fd_install(fd, file);
+	kfree(name);
+	return fd;
+
+free_name:
+	kfree(name);
+	return error;
+}
+#endif
 
 void shmem_set_file(struct vm_area_struct *vma, struct file *file)
 {
