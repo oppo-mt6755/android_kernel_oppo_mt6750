@@ -2391,9 +2391,11 @@ VOID aisFsmSteps(IN P_ADAPTER_T prAdapter, ENUM_AIS_STATE_T eNextState)
 			break;
 
 		case AIS_STATE_REMAIN_ON_CHANNEL:
-			SET_NET_ACTIVE(prAdapter, NETWORK_TYPE_AIS_INDEX);
-			/* sync with firmware */
-			nicActivateNetwork(prAdapter, NETWORK_TYPE_AIS_INDEX);
+			/* Preserve the associated BSS during a temporary channel request. */
+			if (!IS_NET_ACTIVE(prAdapter, NETWORK_TYPE_AIS_INDEX)) {
+				SET_NET_ACTIVE(prAdapter, NETWORK_TYPE_AIS_INDEX);
+				nicActivateNetwork(prAdapter, NETWORK_TYPE_AIS_INDEX);
+			}
 			break;
 
 		default:

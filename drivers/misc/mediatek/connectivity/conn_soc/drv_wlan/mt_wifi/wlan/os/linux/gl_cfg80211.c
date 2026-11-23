@@ -1469,6 +1469,7 @@ int mtk_cfg80211_remain_on_channel(struct wiphy *wiphy,
 		prMsgChnlReq->rMsgHdr.eMsgId = MID_MNY_AIS_REMAIN_ON_CHANNEL;
 		prMsgChnlReq->u8Cookie = *cookie;
 		prMsgChnlReq->u4DurationMs = duration;
+		prMsgChnlReq->eSco = CHNL_EXT_SCN;
 
 		prMsgChnlReq->ucChannelNum = nicFreq2ChannelNum(chan->center_freq * 1000);
 

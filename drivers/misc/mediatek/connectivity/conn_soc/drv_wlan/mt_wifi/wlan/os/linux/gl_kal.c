@@ -3998,8 +3998,6 @@ kalRemainOnChannelExpired(IN P_GLUE_INFO_T prGlueInfo,
 	struct ieee80211_channel *prChannel = NULL;
 	enum nl80211_channel_type rChannelType;
 
-	ucChannelNum = wlanGetChannelNumberByNetwork(prGlueInfo->prAdapter, NETWORK_TYPE_AIS_INDEX);
-
 	if (prGlueInfo->fgIsRegistered == TRUE) {
 		if (ucChannelNum <= 14) {
 			prChannel =
